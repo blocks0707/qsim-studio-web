@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --bg-editor: #1e1e1e;
+  --bg-sidebar: #252526;
+  --bg-activitybar: #333333;
+  --bg-statusbar: #007acc;
+  --bg-titlebar: #3c3c3c;
+  --bg-tab-active: #1e1e1e;
+  --bg-tab-inactive: #2d2d2d;
+  --border: #474747;
+  --text-primary: #cccccc;
+  --text-secondary: #858585;
+  --accent: #007acc;
+  --icon-active: #ffffff;
+  --icon-inactive: #858585;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+/* react-resizable-panels handle styling */
+[data-panel-group-direction="horizontal"] > [data-resize-handle-active],
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
+  width: 1px !important;
+  background: var(--border);
+  transition: background 0.15s;
+}
+
+[data-panel-group-direction="horizontal"] > [data-resize-handle-active],
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id]:hover {
+  background: var(--accent);
+}
+
+[data-panel-group-direction="vertical"] > [data-resize-handle-active],
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id] {
+  height: 1px !important;
+  background: var(--border);
+  transition: background 0.15s;
+}
+
+[data-panel-group-direction="vertical"] > [data-resize-handle-active],
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id]:hover {
+  background: var(--accent);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
