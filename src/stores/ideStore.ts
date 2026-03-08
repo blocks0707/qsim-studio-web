@@ -8,17 +8,95 @@ export interface Tab {
   language: string;
 }
 
+export interface CursorPosition {
+  lineNumber: number;
+  column: number;
+}
+
 interface IDEState {
   activeSidebarSection: SidebarSection | null;
   sidebarOpen: boolean;
   openTabs: Tab[];
   activeTabId: string | null;
+  fileContents: Record<string, string>;
+  cursorPosition: CursorPosition;
 
   toggleSidebar: (section: SidebarSection) => void;
   openTab: (tab: Tab) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  setFileContent: (tabId: string, content: string) => void;
+  setCursorPosition: (pos: CursorPosition) => void;
 }
+
+const defaultContents: Record<string, string> = {
+  "bell-state": `import qiskit
+from qiskit import QuantumCircuit, transpile
+from qiskit_aer import AerSimulator
+
+# Create Bell State circuit
+qc = QuantumCircuit(2, 2)
+qc.h(0)          # Hadamard on qubit 0
+qc.cx(0, 1)      # CNOT: qubit 0 → qubit 1
+qc.measure([0, 1], [0, 1])
+
+# Simulate
+simulator = AerSimulator()
+compiled = transpile(qc, simulator)
+result = simulator.run(compiled, shots=1024).result()
+
+counts = result.get_counts(qc)
+print("Bell State results:", counts)
+# Expected: ~50% |00⟩, ~50% |11⟩`,
+
+  grover: `import numpy as np
+from qiskit import QuantumCircuit, transpile
+from qiskit_aer import AerSimulator
+
+def grover_oracle(n_qubits: int, target: int) -> QuantumCircuit:
+    """Create Grover oracle for target state."""
+    qc = QuantumCircuit(n_qubits)
+    # Mark target state
+    target_bin = format(target, f'0{n_qubits}b')
+    for i, bit in enumerate(reversed(target_bin)):
+        if bit == '0':
+            qc.x(i)
+    qc.h(n_qubits - 1)
+    qc.mcx(list(range(n_qubits - 1)), n_qubits - 1)
+    qc.h(n_qubits - 1)
+    for i, bit in enumerate(reversed(target_bin)):
+        if bit == '0':
+            qc.x(i)
+    return qc
+
+# Grover search for |101⟩ (target = 5)
+n = 3
+grover = QuantumCircuit(n, n)
+grover.h(range(n))  # Superposition`,
+
+  qft: `from qiskit import QuantumCircuit
+import numpy as np
+
+def qft_circuit(n: int) -> QuantumCircuit:
+    """Create Quantum Fourier Transform circuit."""
+    qc = QuantumCircuit(n, name="QFT")
+    
+    for i in range(n):
+        qc.h(i)
+        for j in range(i + 1, n):
+            angle = np.pi / (2 ** (j - i))
+            qc.cp(angle, j, i)
+    
+    # Swap qubits
+    for i in range(n // 2):
+        qc.swap(i, n - i - 1)
+    
+    return qc
+
+# Create 4-qubit QFT
+qft = qft_circuit(4)
+print(qft.draw())`,
+};
 
 const defaultTabs: Tab[] = [
   { id: "bell-state", title: "bell_state.py", language: "Python" },
@@ -26,11 +104,25 @@ const defaultTabs: Tab[] = [
   { id: "qft", title: "qft.py", language: "Python" },
 ];
 
+export function getLanguageFromFilename(filename: string): string {
+  if (filename.endsWith(".qasm")) return "qasm";
+  if (filename.endsWith(".py")) return "python";
+  if (filename.endsWith(".json")) return "json";
+  return "plaintext";
+}
+
+export function getLanguageDisplayName(lang: string): string {
+  const map: Record<string, string> = { python: "Python", qasm: "OpenQASM", json: "JSON", plaintext: "Plain Text" };
+  return map[lang] || lang;
+}
+
 export const useIDEStore = create<IDEState>((set) => ({
   activeSidebarSection: "files",
   sidebarOpen: true,
   openTabs: defaultTabs,
   activeTabId: "bell-state",
+  fileContents: { ...defaultContents },
+  cursorPosition: { lineNumber: 1, column: 1 },
 
   toggleSidebar: (section) =>
     set((state) => {
@@ -60,4 +152,11 @@ export const useIDEStore = create<IDEState>((set) => ({
     }),
 
   setActiveTab: (tabId) => set({ activeTabId: tabId }),
+
+  setFileContent: (tabId, content) =>
+    set((state) => ({
+      fileContents: { ...state.fileContents, [tabId]: content },
+    })),
+
+  setCursorPosition: (pos) => set({ cursorPosition: pos }),
 }));
