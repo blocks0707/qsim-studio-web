@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { Play } from "lucide-react";
 import { TabBar } from "./TabBar";
+import { StudioHome } from "./StudioHome";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
 
 const MonacoEditor = dynamic(
@@ -54,13 +55,7 @@ export function EditorArea() {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
-          <div className="text-center">
-            <div className="text-4xl mb-4">⚛️</div>
-            <div className="text-lg mb-2">QSim Studio</div>
-            <div className="text-sm">Open a file or select an algorithm to begin</div>
-          </div>
-        </div>
+        <StudioHome />
       )}
     </div>
   );
