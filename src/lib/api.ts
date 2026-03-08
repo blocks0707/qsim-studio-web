@@ -130,6 +130,11 @@ export function createClient(baseUrl: string, token: string) {
       apiFetch<void>(url, `/api/v1/jobs/${id}`, token, { method: "DELETE" }),
     getNodes: () =>
       apiFetch<{ nodes: ClusterNode[] } | ClusterNode[]>(url, "/api/v1/cluster/nodes", token),
+    analyzeCircuit: (code: string) =>
+      apiFetch<CircuitAnalysisResult>(url, "/api/v1/circuit/analyze", token, {
+        method: "POST",
+        body: JSON.stringify({ code, language: "python" }),
+      }),
     checkHealth: async (): Promise<boolean> => {
       try {
         const res = await fetch(`${url}/api/v1/cluster/nodes`, {
@@ -142,6 +147,19 @@ export function createClient(baseUrl: string, token: string) {
       }
     },
   };
+}
+
+export interface CircuitGateResult {
+  name: string;
+  qubits: number[];
+  params?: number[];
+}
+
+export interface CircuitAnalysisResult {
+  numQubits: number;
+  numBits: number;
+  gates: CircuitGateResult[];
+  error?: string;
 }
 
 export function extractResult(data: unknown): JobResult {
