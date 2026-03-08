@@ -16,6 +16,7 @@ export function MonacoEditor() {
   const setFileContent = useIDEStore((s) => s.setFileContent);
   const setCursorPosition = useIDEStore((s) => s.setCursorPosition);
   const setEditorRef = useIDEStore((s) => s.setEditorRef);
+  const editorSettings = useIDEStore((s) => s.editorSettings);
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const language = activeTab ? getLanguageFromFilename(activeTab.title) : "plaintext";
@@ -87,14 +88,14 @@ export function MonacoEditor() {
       onMount={handleMount}
       onChange={handleChange}
       options={{
-        fontSize: 13,
+        fontSize: editorSettings.fontSize,
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-        minimap: { enabled: true, scale: 1 },
+        minimap: { enabled: editorSettings.minimap, scale: 1 },
         scrollBeyondLastLine: false,
         automaticLayout: true,
-        tabSize: 4,
-        wordWrap: "off",
-        lineNumbers: "on",
+        tabSize: editorSettings.tabSize,
+        wordWrap: editorSettings.wordWrap ? "on" : "off",
+        lineNumbers: editorSettings.lineNumbers ? "on" : "off",
         renderLineHighlight: "line",
         cursorBlinking: "smooth",
         cursorSmoothCaretAnimation: "on",

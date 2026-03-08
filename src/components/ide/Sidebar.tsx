@@ -14,8 +14,6 @@ import {
   Monitor,
   Wifi,
   WifiOff,
-  Settings,
-  ToggleLeft,
   RefreshCw,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -382,16 +380,65 @@ function JobsPanel() {
 
 /* ───────── NodesPanel ───────── */
 
+interface NodeDisplay {
+  name: string;
+  status: string;
+  qubits: number;
+  load: string;
+}
+
+const mockNodes: NodeDisplay[] = [
+  { name: "qsim-node-01", status: "online", qubits: 32, load: "45%" },
+  { name: "qsim-node-02", status: "online", qubits: 16, load: "78%" },
+  { name: "qsim-node-03", status: "online", qubits: 64, load: "12%" },
+  { name: "qsim-node-04", status: "offline", qubits: 32, load: "—" },
+];
+
 function NodesPanel() {
-  const nodes = [
-    { name: "qsim-node-01", status: "online", qubits: 32, load: "45%" },
-    { name: "qsim-node-02", status: "online", qubits: 16, load: "78%" },
-    { name: "qsim-node-03", status: "online", qubits: 64, load: "12%" },
-    { name: "qsim-node-04", status: "offline", qubits: 32, load: "—" },
-  ];
+  const apiUrl = useIDEStore((s) => s.apiUrl);
+  const apiToken = useIDEStore((s) => s.apiToken);
+  const [nodes, setNodes] = useState<NodeDisplay[]>(mockNodes);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNodes = useCallback(async () => {
+    if (!apiUrl || !apiToken) {
+      setNodes(mockNodes);
+      setError("No API configured — showing mock data");
+      return;
+    }
+    try {
+      const client = createClient(apiUrl, apiToken);
+      const data = await client.getNodes();
+      const list = Array.isArray(data) ? data : (data as { nodes: Array<{ name?: string; id?: string; status?: string; qubits?: number; load?: number }> }).nodes || [];
+      setNodes(list.map((n: { name?: string; id?: string; status?: string; qubits?: number; load?: number }) => ({
+        name: n.name || n.id || "unknown",
+        status: n.status || "unknown",
+        qubits: n.qubits || 0,
+        load: n.load !== undefined ? `${Math.round(n.load * 100)}%` : "—",
+      })));
+      setError(null);
+    } catch {
+      setNodes(mockNodes);
+      setError("No API connection — showing mock data");
+    }
+  }, [apiUrl, apiToken]);
+
+  useEffect(() => {
+    fetchNodes();
+    const iv = setInterval(fetchNodes, 15000);
+    return () => clearInterval(iv);
+  }, [fetchNodes]);
 
   return (
     <div className="text-sm">
+      {error && (
+        <div className="flex items-center justify-between px-3 py-1">
+          <span className="text-[10px]" style={{ color: "#dcdcaa" }}>{error}</span>
+          <button className="p-0.5 rounded hover:bg-white/10" onClick={fetchNodes} title="Refresh">
+            <RefreshCw size={12} style={{ color: "var(--text-secondary)" }} />
+          </button>
+        </div>
+      )}
       {nodes.map((n) => (
         <div
           key={n.name}
@@ -413,6 +460,11 @@ function NodesPanel() {
           </div>
         </div>
       ))}
+      {nodes.length === 0 && (
+        <div className="px-3 py-4 text-xs text-center" style={{ color: "var(--text-secondary)" }}>
+          No nodes available
+        </div>
+      )}
     </div>
   );
 }
@@ -420,74 +472,34 @@ function NodesPanel() {
 /* ───────── SettingsPanel ───────── */
 
 function SettingsPanel() {
-  const apiUrl = useIDEStore((s) => s.apiUrl);
-  const apiToken = useIDEStore((s) => s.apiToken);
-  const setApiConfig = useIDEStore((s) => s.setApiConfig);
+  const setSettingsOpen = useIDEStore((s) => s.setSettingsOpen);
   const isConnected = useIDEStore((s) => s.isConnected);
+  const apiUrl = useIDEStore((s) => s.apiUrl);
+  const editorSettings = useIDEStore((s) => s.editorSettings);
+
+  // Auto-open modal when settings panel is selected
+  useEffect(() => {
+    setSettingsOpen(true);
+  }, [setSettingsOpen]);
 
   return (
     <div className="text-sm p-3 space-y-4">
-      <div>
-        <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-          Theme
-        </label>
-        <select
-          className="w-full mt-1 px-2 py-1 rounded text-sm"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-          defaultValue="dark"
-        >
-          <option value="dark">Dark (VS Code)</option>
-          <option value="light">Light</option>
-        </select>
-      </div>
-      <div>
-        <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-          Font Size
-        </label>
-        <input
-          type="number"
-          defaultValue={14}
-          className="w-full mt-1 px-2 py-1 rounded text-sm"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
-      </div>
-      <div>
-        <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-          API URL
-        </label>
-        <input
-          type="text"
-          value={apiUrl}
-          onChange={(e) => setApiConfig(e.target.value, apiToken)}
-          placeholder="http://localhost:8080"
-          className="w-full mt-1 px-2 py-1 rounded text-sm"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
-      </div>
-      <div>
-        <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-          API Token
-        </label>
-        <input
-          type="password"
-          value={apiToken}
-          onChange={(e) => setApiConfig(apiUrl, e.target.value)}
-          placeholder="Bearer token"
-          className="w-full mt-1 px-2 py-1 rounded text-sm"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
-      </div>
-      <div className="flex items-center gap-2 text-xs" style={{ color: isConnected ? "#4ec9b0" : "#f44747" }}>
-        <span className="inline-block w-2 h-2 rounded-full" style={{ background: isConnected ? "#4ec9b0" : "#f44747" }} />
-        {isConnected ? "Connected to cluster" : "Not connected"}
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Auto-save</span>
-        <ToggleLeft size={20} className="text-[var(--accent)] cursor-pointer" />
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Line Numbers</span>
-        <ToggleLeft size={20} className="text-[var(--accent)] cursor-pointer" />
+      <button
+        onClick={() => setSettingsOpen(true)}
+        className="w-full px-3 py-2 rounded text-xs font-medium text-left"
+        style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+      >
+        ⚙️ Open Settings…
+        <span className="float-right text-[10px]" style={{ color: "var(--text-secondary)" }}>⌘ ,</span>
+      </button>
+
+      <div className="space-y-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full inline-block" style={{ background: isConnected ? "#4ec9b0" : "#f44747" }} />
+          {isConnected ? "Connected" : "Not connected"}
+        </div>
+        <div>API: {apiUrl}</div>
+        <div>Font: {editorSettings.fontSize}px · Tab: {editorSettings.tabSize}</div>
       </div>
     </div>
   );

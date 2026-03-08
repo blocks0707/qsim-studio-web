@@ -50,11 +50,53 @@ export interface JobInfo {
   createdAt?: string;
 }
 
+export interface EditorSettings {
+  fontSize: number;
+  tabSize: 2 | 4;
+  minimap: boolean;
+  wordWrap: boolean;
+  lineNumbers: boolean;
+}
+
+const DEFAULT_SETTINGS: EditorSettings = {
+  fontSize: 13,
+  tabSize: 2,
+  minimap: false,
+  wordWrap: true,
+  lineNumbers: true,
+};
+
+function loadSettings(): { apiUrl: string; apiToken: string; editor: EditorSettings } {
+  if (typeof window === "undefined") return { apiUrl: "http://localhost:8080", apiToken: "", editor: { ...DEFAULT_SETTINGS } };
+  return {
+    apiUrl: localStorage.getItem("qsim-settings:apiUrl") || "http://localhost:8080",
+    apiToken: localStorage.getItem("qsim-settings:apiToken") || "",
+    editor: {
+      fontSize: Number(localStorage.getItem("qsim-settings:fontSize")) || DEFAULT_SETTINGS.fontSize,
+      tabSize: (Number(localStorage.getItem("qsim-settings:tabSize")) || DEFAULT_SETTINGS.tabSize) as 2 | 4,
+      minimap: localStorage.getItem("qsim-settings:minimap") === "true",
+      wordWrap: localStorage.getItem("qsim-settings:wordWrap") !== "false",
+      lineNumbers: localStorage.getItem("qsim-settings:lineNumbers") !== "false",
+    },
+  };
+}
+
+function persistSettings(apiUrl: string, apiToken: string, editor: EditorSettings) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("qsim-settings:apiUrl", apiUrl);
+  localStorage.setItem("qsim-settings:apiToken", apiToken);
+  localStorage.setItem("qsim-settings:fontSize", String(editor.fontSize));
+  localStorage.setItem("qsim-settings:tabSize", String(editor.tabSize));
+  localStorage.setItem("qsim-settings:minimap", String(editor.minimap));
+  localStorage.setItem("qsim-settings:wordWrap", String(editor.wordWrap));
+  localStorage.setItem("qsim-settings:lineNumbers", String(editor.lineNumbers));
+}
+
 interface IDEState {
   // File system
   files: FSFile[];
-  dirtyFiles: Set<string>; // file ids with unsaved changes
-  createFile: (name: string, content?: string) => string; // returns file id
+  dirtyFiles: Set<string>;
+  createFile: (name: string, content?: string) => string;
   renameFile: (id: string, newName: string) => void;
   deleteFile: (id: string) => void;
   loadFromStorage: () => void;
@@ -73,6 +115,14 @@ interface IDEState {
   fileContents: Record<string, string>;
   cursorPosition: CursorPosition;
   editorRef: EditorInstance | null;
+
+  // Settings
+  settingsOpen: boolean;
+  setSettingsOpen: (v: boolean) => void;
+  editorSettings: EditorSettings;
+  setEditorSettings: (s: EditorSettings) => void;
+  saveSettings: () => void;
+  resetSettings: () => void;
 
   // API config
   apiUrl: string;
@@ -267,6 +317,8 @@ export const useIDEStore = create<IDEState>((set, get) => ({
       const content = loadFileContent(f.path);
       if (content !== null) fileContents[f.id] = content;
     }
+    // Load persisted settings
+    const saved = loadSettings();
     // Also keep default contents for algorithm tabs
     set((s) => ({
       files,
@@ -275,6 +327,9 @@ export const useIDEStore = create<IDEState>((set, get) => ({
         ? files.map((f) => ({ id: f.id, title: f.name, language: getLanguageFromFilename(f.name) }))
         : s.openTabs,
       activeTabId: files.length > 0 && s.activeTabId === "bell-state" ? files[0].id : s.activeTabId,
+      apiUrl: saved.apiUrl,
+      apiToken: saved.apiToken,
+      editorSettings: saved.editor,
     }));
   },
 
@@ -325,6 +380,21 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   fileContents: { ...defaultContents },
   cursorPosition: { lineNumber: 1, column: 1 },
   editorRef: null,
+
+  // Settings
+  settingsOpen: false,
+  setSettingsOpen: (v) => set({ settingsOpen: v }),
+  editorSettings: { ...DEFAULT_SETTINGS },
+  setEditorSettings: (s) => set({ editorSettings: s }),
+  saveSettings: () => {
+    const { apiUrl, apiToken, editorSettings } = get();
+    persistSettings(apiUrl, apiToken, editorSettings);
+  },
+  resetSettings: () => {
+    const defaults = { apiUrl: "http://localhost:8080", apiToken: "", editorSettings: { ...DEFAULT_SETTINGS } };
+    persistSettings(defaults.apiUrl, defaults.apiToken, defaults.editorSettings);
+    set(defaults);
+  },
 
   // API config
   apiUrl: "http://localhost:8080",
