@@ -6,31 +6,81 @@ export function parseCode(code: string): CircuitModel | null {
 }
 
 function parsePython(code: string): CircuitModel | null {
-  // Find ALL QuantumCircuit declarations (top-level and inside functions)
-  const qcMatches = [...code.matchAll(/(\w+)\s*=\s*QuantumCircuit\s*\(\s*(\d+)\s*(?:,\s*(\d+))?\s*\)/g)];
+  // Simple variable resolver: scan for `name = <integer>` or `name = <expr>` assignments
+  const varValues = new Map<string, number>();
+  for (const m of code.matchAll(/^[ \t]*(\w+)\s*=\s*(\d+)\s*$/gm)) {
+    varValues.set(m[1], parseInt(m[2], 10));
+  }
+  // Resolve function parameters: def func(param1, param2) ... func(val1, val2)
+  // Maps param names to values from the LAST call site found
+  for (const funcDef of code.matchAll(/^[ \t]*def\s+(\w+)\s*\(([^)]*)\)/gm)) {
+    const funcName = funcDef[1];
+    const params = funcDef[2].split(',').map(p => {
+      // Strip type hints and defaults: "n_qubits: int" → "n_qubits"
+      const name = p.split(':')[0].split('=')[0].trim();
+      return name;
+    }).filter(Boolean);
+    // Find calls to this function: result = func(arg1, arg2) or just func(arg1, arg2)
+    const callRegex = new RegExp(`(?:^|\\n)[ \\t]*(?:\\w+\\s*=\\s*)?${funcName}\\s*\\(([^)]+)\\)`, 'g');
+    for (const call of code.matchAll(callRegex)) {
+      const args = call[1].split(',').map(a => a.trim().replace(/["']/g, ''));
+      for (let i = 0; i < Math.min(params.length, args.length); i++) {
+        if (params[i] && !varValues.has(params[i])) {
+          const val = parseInt(args[i], 10);
+          if (!isNaN(val)) varValues.set(params[i], val);
+          else if (varValues.has(args[i])) varValues.set(params[i], varValues.get(args[i])!);
+        }
+      }
+    }
+  }
+
+  // Also resolve simple expressions: n + 1, 2 * n, n_count + 4
+  for (const m of code.matchAll(/^[ \t]*(\w+)\s*=\s*(\w+)\s*([+\-*])\s*(\d+)\s*$/gm)) {
+    const base = varValues.get(m[2]);
+    if (base !== undefined) {
+      const op = m[3], val = parseInt(m[4], 10);
+      if (op === '+') varValues.set(m[1], base + val);
+      else if (op === '-') varValues.set(m[1], base - val);
+      else if (op === '*') varValues.set(m[1], base * val);
+    }
+  }
+
+  // Resolve a token to a number: literal or variable lookup
+  function resolveNum(token: string): number | null {
+    const trimmed = token.trim();
+    const lit = parseInt(trimmed, 10);
+    if (!isNaN(lit)) return lit;
+    // Check simple expressions inline: n + 1, n * 2
+    const exprMatch = trimmed.match(/^(\w+)\s*([+\-*])\s*(\d+)$/);
+    if (exprMatch) {
+      const base = varValues.get(exprMatch[1]);
+      if (base !== undefined) {
+        const val = parseInt(exprMatch[3], 10);
+        if (exprMatch[2] === '+') return base + val;
+        if (exprMatch[2] === '-') return base - val;
+        if (exprMatch[2] === '*') return base * val;
+      }
+    }
+    return varValues.get(trimmed) ?? null;
+  }
+
+  // Find ALL QuantumCircuit declarations — supports literals AND variables
+  const qcMatches = [...code.matchAll(/(\w+)\s*=\s*QuantumCircuit\s*\(\s*([^)]+)\)/g)];
   if (qcMatches.length === 0) return null;
 
-  // Use the largest qubit count found (covers main circuit + sub-circuits)
   let numQubits = 0;
   let numBits = 0;
   const varNames = new Set<string>();
 
   for (const m of qcMatches) {
     varNames.add(m[1]);
-    const q = parseInt(m[2], 10);
-    const b = m[3] ? parseInt(m[3], 10) : 0;
-    if (q > numQubits) {
+    const args = m[2].split(',').map(a => a.trim()).filter(a => !a.includes('='));
+    const q = resolveNum(args[0]);
+    const b = args[1] ? resolveNum(args[1]) : 0;
+    if (q !== null && q > numQubits) {
       numQubits = q;
-      numBits = b;
+      numBits = b ?? 0;
     }
-  }
-
-  // Also detect QuantumCircuit(n, name=...) pattern (no variable capture needed, already have varNames)
-  const namedMatches = [...code.matchAll(/(\w+)\s*=\s*QuantumCircuit\s*\(\s*(\d+)\s*,\s*name\s*=/g)];
-  for (const m of namedMatches) {
-    varNames.add(m[1]);
-    const q = parseInt(m[2], 10);
-    if (q > numQubits) numQubits = q;
   }
 
   const gates: CircuitGate[] = [];
@@ -46,11 +96,14 @@ function parsePython(code: string): CircuitModel | null {
     // Check if line contains any of our variable names with a dot call
     if (!escapedNames.some(n => trimmed.includes(n + '.'))) continue;
 
-    // Single qubit gates: qc.h(0), qc.x(1)
-    const singleMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(h|x|y|z|s|t)\\s*\\(\\s*(\\d+)\\s*\\)`));
-    if (singleMatch) {
-      gates.push({ type: singleMatch[1], qubits: [parseInt(singleMatch[2], 10)] });
-      continue;
+    // Single qubit gates: qc.h(0), qc.x(1), qc.h(n_qubits - 1)
+    const singleMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(h|x|y|z|s|t)\\s*\\(\\s*([^),]+)\\s*\\)`));
+    if (singleMatch && !singleMatch[2].includes('range')) {
+      const q = resolveNum(singleMatch[2]);
+      if (q !== null && q >= 0 && q < numQubits) {
+        gates.push({ type: singleMatch[1], qubits: [q] });
+        continue;
+      }
     }
 
     // Rotation gates: qc.rx(angle, qubit)
@@ -72,11 +125,15 @@ function parsePython(code: string): CircuitModel | null {
       continue;
     }
 
-    // CX/CZ/SWAP: qc.cx(0, 1)
-    const twoMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(cx|cz|swap)\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)`));
+    // CX/CZ/SWAP: qc.cx(0, 1), qc.cx(i, n_qubits)
+    const twoMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(cx|cz|swap)\\s*\\(\\s*([^,]+)\\s*,\\s*([^)]+)\\s*\\)`));
     if (twoMatch) {
-      gates.push({ type: twoMatch[1], qubits: [parseInt(twoMatch[2], 10), parseInt(twoMatch[3], 10)] });
-      continue;
+      const q0 = resolveNum(twoMatch[2]);
+      const q1 = resolveNum(twoMatch[3]);
+      if (q0 !== null && q1 !== null && q0 >= 0 && q1 >= 0) {
+        gates.push({ type: twoMatch[1], qubits: [q0, q1] });
+        continue;
+      }
     }
 
     // MCX: qc.mcx([0,1,...], target)
@@ -110,20 +167,34 @@ function parsePython(code: string): CircuitModel | null {
       continue;
     }
 
+    // measure(range(n), range(n)) pattern
+    const measureRangeMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.measure\\s*\\(\\s*range\\s*\\(\\s*([^)]+)\\s*\\)\\s*,\\s*range\\s*\\(\\s*([^)]+)\\s*\\)\\s*\\)`));
+    if (measureRangeMatch) {
+      const n = resolveNum(measureRangeMatch[1]);
+      if (n !== null && n > 0) {
+        for (let i = 0; i < Math.min(n, numQubits); i++) {
+          gates.push({ type: 'measure', qubits: [i] });
+        }
+        continue;
+      }
+    }
+
     // Barrier: qc.barrier()
     if (new RegExp(`(?:${varPattern})\\.barrier`).test(trimmed)) {
       gates.push({ type: 'barrier', qubits: Array.from({ length: numQubits }, (_, i) => i) });
       continue;
     }
 
-    // h(range(n)) pattern
-    const rangeMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(h|x|y|z|s|t)\\s*\\(\\s*range\\s*\\(\\s*(\\d+)\\s*\\)\\s*\\)`));
+    // h(range(n)) pattern — supports literals and variables
+    const rangeMatch = trimmed.match(new RegExp(`(?:${varPattern})\\.(h|x|y|z|s|t)\\s*\\(\\s*range\\s*\\(\\s*([^)]+)\\s*\\)\\s*\\)`));
     if (rangeMatch) {
-      const n = parseInt(rangeMatch[2], 10);
-      for (let i = 0; i < n; i++) {
-        gates.push({ type: rangeMatch[1], qubits: [i] });
+      const n = resolveNum(rangeMatch[2]);
+      if (n !== null && n > 0 && n <= numQubits) {
+        for (let i = 0; i < n; i++) {
+          gates.push({ type: rangeMatch[1], qubits: [i] });
+        }
+        continue;
       }
-      continue;
     }
   }
 
