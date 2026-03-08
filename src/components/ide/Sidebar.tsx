@@ -1,12 +1,14 @@
 "use client";
 
-import { useIDEStore } from "@/stores/ideStore";
+import { useIDEStore, type JobInfo } from "@/stores/ideStore";
+import { createClient } from "@/lib/api";
+import { FileContextMenu } from "./FileContextMenu";
 import {
   ChevronRight,
   ChevronDown,
   Folder,
   FileText,
-  Atom,
+  Plus,
   Play,
   Circle,
   Monitor,
@@ -14,89 +16,213 @@ import {
   WifiOff,
   Settings,
   ToggleLeft,
+  RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+
+/* ───────── FilesPanel ───────── */
 
 function FilesPanel() {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    src: true,
-    algorithms: true,
-  });
+  const files = useIDEStore((s) => s.files);
+  const activeTabId = useIDEStore((s) => s.activeTabId);
+  const dirtyFiles = useIDEStore((s) => s.dirtyFiles);
+  const openFileInEditor = useIDEStore((s) => s.openFileInEditor);
+  const createFile = useIDEStore((s) => s.createFile);
+  const renameFile = useIDEStore((s) => s.renameFile);
+  const deleteFile = useIDEStore((s) => s.deleteFile);
 
-  const toggle = (name: string) =>
-    setExpanded((p) => ({ ...p, [name]: !p[name] }));
+  const [expanded, setExpanded] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newFileName, setNewFileName] = useState("untitled.py");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; fileId: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (creating && inputRef.current) inputRef.current.focus();
+  }, [creating]);
+
+  useEffect(() => {
+    if (renamingId && renameRef.current) renameRef.current.focus();
+  }, [renamingId]);
+
+  const handleCreate = () => {
+    const name = newFileName.trim() || "untitled.py";
+    createFile(name);
+    setCreating(false);
+    setNewFileName("untitled.py");
+  };
+
+  const handleRename = (id: string) => {
+    const name = renameValue.trim();
+    if (name) renameFile(id, name);
+    setRenamingId(null);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, fileId: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, fileId });
+  };
 
   return (
     <div className="text-sm">
-      <div
-        className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-white/5"
-        onClick={() => toggle("src")}
-      >
-        {expanded.src ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <Folder size={16} className="text-[#dcb67a]" />
-        <span>src</span>
+      {/* Header with New File button */}
+      <div className="flex items-center justify-between px-2 py-1">
+        <span
+          className="text-[10px] uppercase tracking-wider font-semibold"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          Files
+        </span>
+        <button
+          className="p-0.5 rounded hover:bg-white/10"
+          title="New File"
+          onClick={() => setCreating(true)}
+        >
+          <Plus size={14} style={{ color: "var(--text-secondary)" }} />
+        </button>
       </div>
-      {expanded.src && (
-        <div className="ml-4">
-          <div
-            className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-white/5"
-            onClick={() => toggle("algorithms")}
-          >
-            {expanded.algorithms ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            <Folder size={16} className="text-[#dcb67a]" />
-            <span>algorithms</span>
-          </div>
-          {expanded.algorithms && (
-            <div className="ml-4">
-              {["bell_state.py", "grover.py", "qft.py", "vqe.py", "qaoa.py", "teleport.py"].map(
-                (f) => (
-                  <div
-                    key={f}
-                    className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5"
-                  >
-                    <FileText size={14} className="text-[#519aba]" />
-                    <span style={{ color: "var(--text-primary)" }}>{f}</span>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-          <div className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5">
-            <FileText size={14} className="text-[#519aba]" />
-            <span>main.py</span>
-          </div>
-          <div className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5">
-            <FileText size={14} className="text-[#e37933]" />
-            <span>config.json</span>
-          </div>
+
+      {/* New file input */}
+      {creating && (
+        <div className="px-2 py-1">
+          <input
+            ref={inputRef}
+            className="w-full px-1.5 py-0.5 text-xs rounded"
+            style={{
+              background: "var(--bg-editor)",
+              border: "1px solid var(--accent)",
+              color: "var(--text-primary)",
+              outline: "none",
+            }}
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreate();
+              if (e.key === "Escape") setCreating(false);
+            }}
+            onBlur={handleCreate}
+          />
         </div>
       )}
-      <div className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5">
-        <FileText size={14} className="text-[#cbcb41]" />
-        <span>README.md</span>
+
+      {/* Project folder */}
+      <div
+        className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-white/5"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <Folder size={16} className="text-[#dcb67a]" />
+        <span>project</span>
       </div>
-      <div className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5">
-        <FileText size={14} className="text-[#a074c4]" />
-        <span>requirements.txt</span>
-      </div>
+
+      {expanded && (
+        <div className="ml-4">
+          {files.map((f) => {
+            const isActive = f.id === activeTabId;
+            const isDirty = dirtyFiles.has(f.id);
+
+            if (renamingId === f.id) {
+              return (
+                <div key={f.id} className="px-2 py-0.5">
+                  <input
+                    ref={renameRef}
+                    className="w-full px-1.5 py-0.5 text-xs rounded"
+                    style={{
+                      background: "var(--bg-editor)",
+                      border: "1px solid var(--accent)",
+                      color: "var(--text-primary)",
+                      outline: "none",
+                    }}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRename(f.id);
+                      if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    onBlur={() => handleRename(f.id)}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5"
+                style={{
+                  background: isActive ? "rgba(255,255,255,0.08)" : undefined,
+                }}
+                onClick={() => openFileInEditor(f)}
+                onContextMenu={(e) => handleContextMenu(e, f.id)}
+              >
+                <FileText
+                  size={14}
+                  className={f.name.endsWith(".qasm") ? "text-[#e37933]" : "text-[#519aba]"}
+                />
+                <span
+                  className="flex-1 truncate"
+                  style={{ color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}
+                >
+                  {f.name}
+                </span>
+                {isDirty && (
+                  <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: "var(--accent)" }} />
+                )}
+              </div>
+            );
+          })}
+
+          {files.length === 0 && !creating && (
+            <div className="px-2 py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+              No files yet
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onRename={() => {
+            const file = files.find((f) => f.id === contextMenu.fileId);
+            if (file) {
+              setRenamingId(file.id);
+              setRenameValue(file.name);
+            }
+          }}
+          onDelete={() => {
+            deleteFile(contextMenu.fileId);
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
 
+/* ───────── AlgorithmsPanel ───────── */
+
 function AlgorithmsPanel() {
+  const openAlgorithm = useIDEStore((s) => s.openAlgorithm);
+
   const algorithms = [
-    { name: "Bell State", desc: "2-qubit entanglement", icon: "🔔" },
-    { name: "GHZ State", desc: "Multi-qubit entanglement", icon: "👻" },
-    { name: "QFT", desc: "Quantum Fourier Transform", icon: "📊" },
-    { name: "Grover", desc: "Quantum search", icon: "🔍" },
-    { name: "VQE", desc: "Variational Quantum Eigensolver", icon: "⚡" },
-    { name: "QAOA", desc: "Quantum optimization", icon: "🌀" },
-    { name: "Teleportation", desc: "Quantum state transfer", icon: "🚀" },
-    { name: "Deutsch-Jozsa", desc: "Oracle problem", icon: "🎯" },
-    { name: "Bernstein-Vazirani", desc: "Hidden string", icon: "🔑" },
-    { name: "Simon", desc: "Period finding", icon: "🔄" },
-    { name: "Shor", desc: "Integer factoring", icon: "🔢" },
-    { name: "QPE", desc: "Phase estimation", icon: "📐" },
+    { id: "bell-state", name: "Bell State", desc: "2-qubit entanglement", icon: "🔔" },
+    { id: "ghz", name: "GHZ State", desc: "Multi-qubit entanglement", icon: "👻" },
+    { id: "qft", name: "QFT", desc: "Quantum Fourier Transform", icon: "📊" },
+    { id: "grover", name: "Grover", desc: "Quantum search", icon: "🔍" },
+    { id: "vqe", name: "VQE", desc: "Variational Quantum Eigensolver", icon: "⚡" },
+    { id: "qaoa", name: "QAOA", desc: "Quantum optimization", icon: "🌀" },
+    { id: "teleportation", name: "Teleportation", desc: "Quantum state transfer", icon: "🚀" },
+    { id: "deutsch-jozsa", name: "Deutsch-Jozsa", desc: "Oracle problem", icon: "🎯" },
+    { id: "bernstein-vazirani", name: "Bernstein-Vazirani", desc: "Hidden string", icon: "🔑" },
+    { id: "simon", name: "Simon", desc: "Period finding", icon: "🔄" },
+    { id: "shor", name: "Shor", desc: "Integer factoring", icon: "🔢" },
+    { id: "qpe", name: "QPE", desc: "Phase estimation", icon: "📐" },
   ];
 
   return (
@@ -106,6 +232,7 @@ function AlgorithmsPanel() {
           key={a.name}
           className="p-2 rounded cursor-pointer hover:bg-white/10 transition-colors"
           style={{ background: "var(--bg-editor)", border: "1px solid var(--border)" }}
+          onClick={() => openAlgorithm(a.id)}
         >
           <div className="text-lg mb-1">{a.icon}</div>
           <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
@@ -120,45 +247,129 @@ function AlgorithmsPanel() {
   );
 }
 
+/* ───────── JobsPanel ───────── */
+
+const mockJobs: JobInfo[] = [
+  { id: "job-001", name: "Bell State Sim", status: "running", createdAt: new Date(Date.now() - 120000).toISOString() },
+  { id: "job-002", name: "Grover 8-qubit", status: "completed", createdAt: new Date(Date.now() - 900000).toISOString() },
+  { id: "job-003", name: "VQE H2 molecule", status: "completed", createdAt: new Date(Date.now() - 3600000).toISOString() },
+  { id: "job-004", name: "QAOA MaxCut", status: "failed", createdAt: new Date(Date.now() - 7200000).toISOString() },
+  { id: "job-005", name: "QFT 16-qubit", status: "queued", createdAt: new Date().toISOString() },
+];
+
+function timeAgo(iso?: string): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
 function JobsPanel() {
-  const jobs = [
-    { id: "job-001", name: "Bell State Sim", status: "running", time: "2m ago" },
-    { id: "job-002", name: "Grover 8-qubit", status: "completed", time: "15m ago" },
-    { id: "job-003", name: "VQE H2 molecule", status: "completed", time: "1h ago" },
-    { id: "job-004", name: "QAOA MaxCut", status: "failed", time: "2h ago" },
-    { id: "job-005", name: "QFT 16-qubit", status: "queued", time: "just now" },
-  ];
+  const jobs = useIDEStore((s) => s.jobs);
+  const setJobs = useIDEStore((s) => s.setJobs);
+  const jobsError = useIDEStore((s) => s.jobsError);
+  const setJobsError = useIDEStore((s) => s.setJobsError);
+  const apiUrl = useIDEStore((s) => s.apiUrl);
+  const apiToken = useIDEStore((s) => s.apiToken);
+  const setJobResult = useIDEStore((s) => s.setJobResult);
+  const setActiveResultTab = useIDEStore((s) => s.setActiveResultTab);
+
+  const fetchJobs = useCallback(async () => {
+    if (!apiUrl || !apiToken) {
+      setJobs(mockJobs);
+      setJobsError("No API configured — showing mock data");
+      return;
+    }
+    try {
+      const client = createClient(apiUrl, apiToken);
+      const res = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/v1/jobs`, {
+        headers: { Authorization: `Bearer ${apiToken}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const list: JobInfo[] = (Array.isArray(data) ? data : data.jobs || []).map((j: Record<string, unknown>) => ({
+        id: j.id || j.job_id,
+        name: j.name || j.id || "Untitled",
+        status: j.status || "queued",
+        createdAt: j.created_at || j.createdAt,
+      }));
+      setJobs(list);
+      setJobsError(null);
+    } catch {
+      if (jobs.length === 0) setJobs(mockJobs);
+      setJobsError("No API connection");
+    }
+  }, [apiUrl, apiToken, setJobs, setJobsError, jobs.length]);
+
+  useEffect(() => {
+    fetchJobs();
+    const iv = setInterval(fetchJobs, 10000);
+    return () => clearInterval(iv);
+  }, [fetchJobs]);
+
+  const handleClickJob = async (job: JobInfo) => {
+    if (job.status !== "completed") return;
+    if (!apiUrl || !apiToken) return;
+    try {
+      const client = createClient(apiUrl, apiToken);
+      const raw = await client.getJobResult(job.id);
+      const { extractResult } = await import("@/lib/api");
+      setJobResult(extractResult(raw));
+      setActiveResultTab("histogram");
+    } catch {
+      // ignore
+    }
+  };
 
   const statusColor: Record<string, string> = {
     running: "#4ec9b0",
     completed: "#6a9955",
     failed: "#f44747",
     queued: "#dcdcaa",
+    cancelled: "#888",
   };
+
+  const displayJobs = jobs.length > 0 ? jobs : mockJobs;
 
   return (
     <div className="text-sm">
-      {jobs.map((j) => (
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-1">
+        {jobsError && (
+          <span className="text-[10px]" style={{ color: "#dcdcaa" }}>
+            {jobsError}
+          </span>
+        )}
+        <button className="p-0.5 rounded hover:bg-white/10 ml-auto" onClick={fetchJobs} title="Refresh">
+          <RefreshCw size={12} style={{ color: "var(--text-secondary)" }} />
+        </button>
+      </div>
+
+      {displayJobs.map((j) => (
         <div
           key={j.id}
           className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5"
+          onClick={() => handleClickJob(j)}
         >
           {j.status === "running" ? (
             <Play size={14} style={{ color: statusColor[j.status] }} />
           ) : (
-            <Circle size={8} fill={statusColor[j.status]} style={{ color: statusColor[j.status] }} />
+            <Circle size={8} fill={statusColor[j.status] || "#888"} style={{ color: statusColor[j.status] || "#888" }} />
           )}
           <div className="flex-1 min-w-0">
             <div className="truncate" style={{ color: "var(--text-primary)" }}>{j.name}</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {j.id} · {j.time}
+              {j.id} · {timeAgo(j.createdAt)}
             </div>
           </div>
           <span
             className="text-xs px-1.5 py-0.5 rounded"
             style={{
-              color: statusColor[j.status],
-              background: `${statusColor[j.status]}20`,
+              color: statusColor[j.status] || "#888",
+              background: `${statusColor[j.status] || "#888"}20`,
             }}
           >
             {j.status}
@@ -168,6 +379,8 @@ function JobsPanel() {
     </div>
   );
 }
+
+/* ───────── NodesPanel ───────── */
 
 function NodesPanel() {
   const nodes = [
@@ -203,6 +416,8 @@ function NodesPanel() {
     </div>
   );
 }
+
+/* ───────── SettingsPanel ───────── */
 
 function SettingsPanel() {
   const apiUrl = useIDEStore((s) => s.apiUrl);
@@ -277,6 +492,8 @@ function SettingsPanel() {
     </div>
   );
 }
+
+/* ───────── Sidebar ───────── */
 
 const panels: Record<string, { title: string; component: React.FC }> = {
   files: { title: "EXPLORER", component: FilesPanel },

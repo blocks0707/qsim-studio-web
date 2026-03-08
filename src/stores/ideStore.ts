@@ -1,5 +1,14 @@
 import { create } from "zustand";
 import { getAlgorithm } from "@/lib/algorithms";
+import {
+  loadFileTree,
+  saveFileTree,
+  loadFileContent,
+  saveFileContent,
+  deleteFileContent,
+  ensureDefaultFiles,
+  type FSFile,
+} from "@/lib/filesystem";
 
 export type SidebarSection = "files" | "algorithms" | "jobs" | "nodes" | "settings";
 export type ResultTab = "histogram" | "probability" | "statistics" | "console";
@@ -34,7 +43,29 @@ export interface JobResultData {
   };
 }
 
+export interface JobInfo {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  createdAt?: string;
+}
+
 interface IDEState {
+  // File system
+  files: FSFile[];
+  dirtyFiles: Set<string>; // file ids with unsaved changes
+  createFile: (name: string, content?: string) => string; // returns file id
+  renameFile: (id: string, newName: string) => void;
+  deleteFile: (id: string) => void;
+  loadFromStorage: () => void;
+  saveFileToStorage: (fileId: string) => void;
+  openFileInEditor: (file: FSFile) => void;
+
+  // Jobs
+  jobs: JobInfo[];
+  setJobs: (jobs: JobInfo[]) => void;
+  jobsError: string | null;
+  setJobsError: (err: string | null) => void;
   activeSidebarSection: SidebarSection | null;
   sidebarOpen: boolean;
   openTabs: Tab[];
@@ -164,7 +195,129 @@ export function getLanguageDisplayName(lang: string): string {
   return map[lang] || lang;
 }
 
-export const useIDEStore = create<IDEState>((set) => ({
+export const useIDEStore = create<IDEState>((set, get) => ({
+  // File system
+  files: [],
+  dirtyFiles: new Set<string>(),
+
+  createFile: (name, content) => {
+    if (!name.includes(".")) name = name + ".py";
+    const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const path = `/${name}`;
+    const file: FSFile = { id, name, path };
+    const defaultContent = content ?? "# New quantum circuit\nfrom qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2, 2)\n";
+
+    set((s) => {
+      const files = [...s.files, file];
+      saveFileTree(files);
+      saveFileContent(path, defaultContent);
+      return {
+        files,
+        fileContents: { ...s.fileContents, [id]: defaultContent },
+      };
+    });
+
+    // Open in editor
+    get().openFileInEditor(file);
+    return id;
+  },
+
+  renameFile: (id, newName) => {
+    if (!newName.includes(".")) newName = newName + ".py";
+    set((s) => {
+      const files = s.files.map((f) => {
+        if (f.id !== id) return f;
+        const oldPath = f.path;
+        const content = s.fileContents[id] ?? loadFileContent(oldPath) ?? "";
+        deleteFileContent(oldPath);
+        const newPath = `/${newName}`;
+        saveFileContent(newPath, content);
+        return { ...f, name: newName, path: newPath };
+      });
+      saveFileTree(files);
+      const openTabs = s.openTabs.map((t) =>
+        t.id === id ? { ...t, title: newName, language: getLanguageFromFilename(newName) } : t
+      );
+      return { files, openTabs };
+    });
+  },
+
+  deleteFile: (id) => {
+    set((s) => {
+      const file = s.files.find((f) => f.id === id);
+      if (file) {
+        deleteFileContent(file.path);
+      }
+      const files = s.files.filter((f) => f.id !== id);
+      saveFileTree(files);
+      const openTabs = s.openTabs.filter((t) => t.id !== id);
+      const newContents = { ...s.fileContents };
+      delete newContents[id];
+      const activeTabId = s.activeTabId === id
+        ? (openTabs.length > 0 ? openTabs[openTabs.length - 1].id : null)
+        : s.activeTabId;
+      return { files, openTabs, activeTabId, fileContents: newContents };
+    });
+  },
+
+  loadFromStorage: () => {
+    const files = ensureDefaultFiles();
+    const fileContents: Record<string, string> = {};
+    for (const f of files) {
+      const content = loadFileContent(f.path);
+      if (content !== null) fileContents[f.id] = content;
+    }
+    // Also keep default contents for algorithm tabs
+    set((s) => ({
+      files,
+      fileContents: { ...defaultContents, ...fileContents, ...s.fileContents },
+      openTabs: files.length > 0 && s.openTabs.length === defaultTabs.length
+        ? files.map((f) => ({ id: f.id, title: f.name, language: getLanguageFromFilename(f.name) }))
+        : s.openTabs,
+      activeTabId: files.length > 0 && s.activeTabId === "bell-state" ? files[0].id : s.activeTabId,
+    }));
+  },
+
+  saveFileToStorage: (fileId) => {
+    const s = get();
+    const file = s.files.find((f) => f.id === fileId);
+    const content = s.fileContents[fileId];
+    if (file && content !== undefined) {
+      saveFileContent(file.path, content);
+      set((s) => {
+        const dirty = new Set(s.dirtyFiles);
+        dirty.delete(fileId);
+        return { dirtyFiles: dirty };
+      });
+    }
+  },
+
+  openFileInEditor: (file) => {
+    const s = get();
+    const tab: Tab = {
+      id: file.id,
+      title: file.name,
+      language: getLanguageFromFilename(file.name),
+    };
+    const exists = s.openTabs.find((t) => t.id === file.id);
+    if (exists) {
+      set({ activeTabId: file.id });
+    } else {
+      const content = s.fileContents[file.id] ?? loadFileContent(file.path) ?? "";
+      set((s) => ({
+        openTabs: [...s.openTabs, tab],
+        activeTabId: file.id,
+        fileContents: { ...s.fileContents, [file.id]: content },
+      }));
+    }
+  },
+
+  // Jobs
+  jobs: [],
+  setJobs: (jobs) => set({ jobs }),
+  jobsError: null,
+  setJobsError: (err) => set({ jobsError: err }),
+
   activeSidebarSection: "files",
   sidebarOpen: true,
   openTabs: defaultTabs,
@@ -227,9 +380,17 @@ export const useIDEStore = create<IDEState>((set) => ({
   setActiveTab: (tabId) => set({ activeTabId: tabId }),
 
   setFileContent: (tabId, content) =>
-    set((state) => ({
-      fileContents: { ...state.fileContents, [tabId]: content },
-    })),
+    set((state) => {
+      // Mark dirty for filesystem files
+      const dirty = new Set(state.dirtyFiles);
+      if (state.files.some((f) => f.id === tabId)) {
+        dirty.add(tabId);
+      }
+      return {
+        fileContents: { ...state.fileContents, [tabId]: content },
+        dirtyFiles: dirty,
+      };
+    }),
 
   setCursorPosition: (pos) => set({ cursorPosition: pos }),
 
