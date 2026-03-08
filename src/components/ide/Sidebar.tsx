@@ -214,7 +214,7 @@ function AlgorithmsPanel() {
 
   const algorithms = [
     { id: "bell-state", name: "Bell State", desc: "2-qubit entanglement", icon: "🔔" },
-    { id: "ghz", name: "GHZ State", desc: "Multi-qubit entanglement", icon: "👻" },
+    { id: "ghz-state", name: "GHZ State", desc: "Multi-qubit entanglement", icon: "👻" },
     { id: "qft", name: "QFT", desc: "Quantum Fourier Transform", icon: "📊" },
     { id: "grover", name: "Grover", desc: "Quantum search", icon: "🔍" },
     { id: "vqe", name: "VQE", desc: "Variational Quantum Eigensolver", icon: "⚡" },

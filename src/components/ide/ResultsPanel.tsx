@@ -24,31 +24,40 @@ const tabs: { id: ResultTab; label: string }[] = [
   { id: "console", label: "Console" },
 ];
 
-const MOCK_COUNTS: Record<string, number> = {
-  "00": 512,
-  "11": 498,
-  "01": 8,
-  "10": 6,
-};
-
 function useCounts() {
   const jobResult = useIDEStore((s) => s.jobResult);
   return jobResult?.counts && Object.keys(jobResult.counts).length > 0
     ? jobResult.counts
-    : MOCK_COUNTS;
+    : null;
 }
 
 function HistogramTab() {
   const counts = useCounts();
+  if (!counts) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm">Run a simulation to see results</p>
+      </div>
+    );
+  }
+  // Use a key derived from counts to force Recharts to re-render on data change
+  const chartKey = Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(',');
   return (
     <div className="flex-1 overflow-hidden p-3">
-      <HistogramChart counts={counts} />
+      <HistogramChart key={chartKey} counts={counts} />
     </div>
   );
 }
 
 function ProbabilityTab() {
   const counts = useCounts();
+  if (!counts) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm">Run a simulation to see results</p>
+      </div>
+    );
+  }
   const totalShots = Object.values(counts).reduce((a, b) => a + b, 0);
   const sorted = Object.entries(counts)
     .map(([state, count]) => ({ state, count, probability: count / totalShots }))
@@ -177,7 +186,7 @@ function StatisticsTab() {
   const assignedPool = useIDEStore((s) => s.jobAssignedPool);
   const qubits = useIDEStore((s) => s.jobQubits);
   const counts = useCounts();
-  const totalShots = Object.values(counts).reduce((a, b) => a + b, 0);
+  const totalShots = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
   const meta = jobResult?.metadata;
 
   const cards: { label: string; value: string }[] = [

@@ -111,11 +111,15 @@ async function apiFetch<T>(
 export function createClient(baseUrl: string, token: string) {
   const url = baseUrl.replace(/\/+$/, "");
   return {
-    submitJob: (job: JobSubmission) =>
-      apiFetch<{ id: string }>(url, "/api/v1/jobs", token, {
+    submitJob: async (job: JobSubmission): Promise<{ id: string }> => {
+      const raw = await apiFetch<Record<string, unknown>>(url, "/api/v1/jobs", token, {
         method: "POST",
         body: JSON.stringify(job),
-      }),
+      });
+      // API returns job_id (→ jobId after snakeToCamel) or id
+      const id = (raw.jobId as string) || (raw.id as string) || "";
+      return { id };
+    },
     getJobStatus: (id: string) =>
       apiFetch<JobStatus>(url, `/api/v1/jobs/${id}`, token),
     getJobResult: (id: string) =>
