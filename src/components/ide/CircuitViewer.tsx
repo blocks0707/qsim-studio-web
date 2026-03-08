@@ -6,22 +6,69 @@ import { parseCode } from "@/lib/circuit/parser";
 import { generateGateCode, findCircuitVar, findLastGateLine } from "@/lib/circuit/codeGenerator";
 import { CircuitRenderer } from "./CircuitRenderer";
 import { GatePalette } from "./GatePalette";
+import { createClient, CircuitAnalysisResult } from "@/lib/api";
+import type { CircuitModel } from "@/lib/circuit/types";
 
 export function CircuitViewer() {
   const activeTabId = useIDEStore((s) => s.activeTabId);
   const fileContents = useIDEStore((s) => s.fileContents);
   const code = activeTabId ? fileContents[activeTabId] ?? "" : "";
 
-  // Debounced parsing
+  // Debounced code for parsing
   const [debouncedCode, setDebouncedCode] = useState(code);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    timerRef.current = setTimeout(() => setDebouncedCode(code), 300);
+    timerRef.current = setTimeout(() => setDebouncedCode(code), 500);
     return () => clearTimeout(timerRef.current);
   }, [code]);
 
-  const circuit = useMemo(() => parseCode(debouncedCode), [debouncedCode]);
+  // Dry-run API call with regex fallback
+  const [dryRunCircuit, setDryRunCircuit] = useState<CircuitModel | null>(null);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
+  const dryRunTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const clusterUrl = useIDEStore((s) => s.apiUrl);
+  const apiToken = useIDEStore((s) => s.apiToken);
+
+  useEffect(() => {
+    if (!debouncedCode || !clusterUrl || !apiToken) {
+      setDryRunCircuit(null);
+      return;
+    }
+
+    clearTimeout(dryRunTimer.current);
+    dryRunTimer.current = setTimeout(async () => {
+      setDryRunLoading(true);
+      try {
+        const client = createClient(clusterUrl, apiToken);
+        const result: CircuitAnalysisResult = await client.analyzeCircuit(debouncedCode);
+        if (result.error) {
+          setDryRunCircuit(null);
+        } else {
+          setDryRunCircuit({
+            numQubits: result.numQubits,
+            numBits: result.numBits,
+            gates: result.gates.map((g) => ({
+              type: g.name,
+              qubits: g.qubits,
+              params: g.params,
+            })),
+          });
+        }
+      } catch {
+        setDryRunCircuit(null);
+      } finally {
+        setDryRunLoading(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(dryRunTimer.current);
+  }, [debouncedCode, clusterUrl, apiToken]);
+
+  // Use dry-run result if available, otherwise fallback to regex parser
+  const regexCircuit = useMemo(() => parseCode(debouncedCode), [debouncedCode]);
+  const circuit = dryRunCircuit ?? regexCircuit;
 
   // Zoom/pan state
   const [scale, setScale] = useState(1);
@@ -102,7 +149,7 @@ export function CircuitViewer() {
         className="h-9 flex items-center px-4 text-[11px] font-semibold tracking-wider flex-shrink-0 uppercase justify-between"
         style={{ color: "var(--text-secondary)", background: "var(--bg-sidebar)" }}
       >
-        <span>CIRCUIT VIEWER</span>
+        <span>CIRCUIT VIEWER{dryRunLoading ? " ⟳" : dryRunCircuit ? " ✓" : ""}</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setScale(s => Math.min(3, s + 0.2))}
