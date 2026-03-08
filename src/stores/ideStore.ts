@@ -58,6 +58,7 @@ export interface JobInfo {
   startTime?: string;
   completionTime?: string;
   executionTime?: number;
+  error?: string;
 }
 
 export interface EditorSettings {
