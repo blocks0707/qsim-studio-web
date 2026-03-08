@@ -11,6 +11,29 @@ function parsePython(code: string): CircuitModel | null {
   for (const m of code.matchAll(/^[ \t]*(\w+)\s*=\s*(\d+)\s*$/gm)) {
     varValues.set(m[1], parseInt(m[2], 10));
   }
+  // Resolve function parameters: def func(param1, param2) ... func(val1, val2)
+  // Maps param names to values from the LAST call site found
+  for (const funcDef of code.matchAll(/^[ \t]*def\s+(\w+)\s*\(([^)]*)\)/gm)) {
+    const funcName = funcDef[1];
+    const params = funcDef[2].split(',').map(p => {
+      // Strip type hints and defaults: "n_qubits: int" → "n_qubits"
+      const name = p.split(':')[0].split('=')[0].trim();
+      return name;
+    }).filter(Boolean);
+    // Find calls to this function: result = func(arg1, arg2) or just func(arg1, arg2)
+    const callRegex = new RegExp(`(?:^|\\n)[ \\t]*(?:\\w+\\s*=\\s*)?${funcName}\\s*\\(([^)]+)\\)`, 'g');
+    for (const call of code.matchAll(callRegex)) {
+      const args = call[1].split(',').map(a => a.trim().replace(/["']/g, ''));
+      for (let i = 0; i < Math.min(params.length, args.length); i++) {
+        if (params[i] && !varValues.has(params[i])) {
+          const val = parseInt(args[i], 10);
+          if (!isNaN(val)) varValues.set(params[i], val);
+          else if (varValues.has(args[i])) varValues.set(params[i], varValues.get(args[i])!);
+        }
+      }
+    }
+  }
+
   // Also resolve simple expressions: n + 1, 2 * n, n_count + 4
   for (const m of code.matchAll(/^[ \t]*(\w+)\s*=\s*(\w+)\s*([+\-*])\s*(\d+)\s*$/gm)) {
     const base = varValues.get(m[2]);
