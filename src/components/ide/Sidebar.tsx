@@ -1,7 +1,6 @@
 "use client";
 
 import { useIDEStore, type JobInfo } from "@/stores/ideStore";
-import { createClient } from "@/lib/api";
 import { FileContextMenu } from "./FileContextMenu";
 import {
   ChevronRight,
@@ -15,9 +14,12 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
-import { normalizePhase } from "@/lib/api";
+import { normalizePhase, createClient, type JobPhase } from "@/lib/api";
 import { StatusBadge } from "./StatusBadge";
+import { JobStepper } from "./JobStepper";
 import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ───────── FilesPanel ───────── */
@@ -253,9 +255,10 @@ const mockJobs: JobInfo[] = [
   { id: "job-001", name: "Bell State Sim", status: "running", phase: "running", createdAt: new Date(Date.now() - 120000).toISOString() },
   { id: "job-002", name: "Grover 8-qubit", status: "succeeded", phase: "succeeded", createdAt: new Date(Date.now() - 900000).toISOString() },
   { id: "job-003", name: "VQE H2 molecule", status: "succeeded", phase: "succeeded", createdAt: new Date(Date.now() - 3600000).toISOString() },
-  { id: "job-004", name: "QAOA MaxCut", status: "failed", phase: "failed", createdAt: new Date(Date.now() - 7200000).toISOString() },
+  { id: "job-004", name: "QAOA MaxCut", status: "failed", phase: "failed", createdAt: new Date(Date.now() - 7200000).toISOString(), error: "OutOfMemoryError: Circuit requires 4.2GB but node has 2GB available" },
   { id: "job-005", name: "QFT 16-qubit", status: "pending", phase: "pending", createdAt: new Date().toISOString() },
-  { id: "job-006", name: "QPE 4-qubit", status: "analyzing", phase: "analyzing", createdAt: new Date(Date.now() - 30000).toISOString() },
+  { id: "job-006", name: "QPE 4-qubit", status: "pending", phase: "pending", createdAt: new Date(Date.now() - 30000).toISOString() },
+  { id: "job-007", name: "Shor Factoring", status: "analyzing", phase: "analyzing", createdAt: new Date(Date.now() - 15000).toISOString() },
 ];
 
 function timeAgo(iso?: string): string {
@@ -267,6 +270,24 @@ function timeAgo(iso?: string): string {
   return `${Math.floor(diff / 86400000)}d ago`;
 }
 
+/** Pending/queued job의 대기 순서를 계산 (생성시간 순) */
+function computeQueuePositions(jobs: JobInfo[]): Map<string, number> {
+  const pendingJobs = jobs
+    .filter((j) => {
+      const phase = j.phase || normalizePhase(j.status);
+      return phase === "pending";
+    })
+    .sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+
+  const map = new Map<string, number>();
+  pendingJobs.forEach((j, i) => map.set(j.id, i + 1));
+  return map;
+}
+
 function JobsPanel() {
   const jobs = useIDEStore((s) => s.jobs);
   const setJobs = useIDEStore((s) => s.setJobs);
@@ -276,6 +297,15 @@ function JobsPanel() {
   const apiToken = useIDEStore((s) => s.apiToken);
   const setJobResult = useIDEStore((s) => s.setJobResult);
   const setActiveResultTab = useIDEStore((s) => s.setActiveResultTab);
+  const setRunning = useIDEStore((s) => s.setRunning);
+  const setCurrentJobId = useIDEStore((s) => s.setCurrentJobId);
+  const appendLog = useIDEStore((s) => s.appendLog);
+  const shots = useIDEStore((s) => s.shots);
+  const lastSubmittedCode = useIDEStore((s) => s.lastSubmittedCode);
+  const lastSubmittedLanguage = useIDEStore((s) => s.lastSubmittedLanguage);
+
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async () => {
     if (!apiUrl || !apiToken) {
@@ -284,7 +314,6 @@ function JobsPanel() {
       return;
     }
     try {
-      const client = createClient(apiUrl, apiToken);
       const res = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/v1/jobs`, {
         headers: { Authorization: `Bearer ${apiToken}` },
         signal: AbortSignal.timeout(5000),
@@ -295,7 +324,9 @@ function JobsPanel() {
         id: j.id || j.job_id,
         name: j.name || j.id || "Untitled",
         status: j.status || "queued",
+        phase: j.phase ? (j.phase as JobPhase) : undefined,
         createdAt: j.created_at || j.createdAt,
+        error: j.error || j.error_message,
       }));
       setJobs(list);
       setJobsError(null);
@@ -312,6 +343,9 @@ function JobsPanel() {
   }, [fetchJobs]);
 
   const handleClickJob = async (job: JobInfo) => {
+    // 토글 확장
+    setExpandedJobId((prev) => (prev === job.id ? null : job.id));
+
     const phase = job.phase || normalizePhase(job.status);
     if (phase !== "succeeded") return;
     if (!apiUrl || !apiToken) return;
@@ -326,7 +360,34 @@ function JobsPanel() {
     }
   };
 
+  // 재시도: 같은 코드/설정으로 새 job 제출
+  const handleRetry = async (job: JobInfo) => {
+    if (!apiUrl || !apiToken || !lastSubmittedCode) {
+      appendLog("[Retry] No API config or no previous code to retry");
+      return;
+    }
+    setRetrying(job.id);
+    try {
+      const client = createClient(apiUrl, apiToken);
+      const result = await client.submitJob({
+        code: lastSubmittedCode,
+        language: (lastSubmittedLanguage as "python" | "qasm") || "python",
+        shots,
+      });
+      setCurrentJobId(result.id);
+      setRunning(true);
+      appendLog(`[Retry] New job submitted: ${result.id}`);
+      fetchJobs();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog(`[Retry] Failed: ${msg}`);
+    } finally {
+      setRetrying(null);
+    }
+  };
+
   const displayJobs = jobs.length > 0 ? jobs : mockJobs;
+  const queuePositions = computeQueuePositions(displayJobs);
 
   return (
     <div className="text-sm">
@@ -343,20 +404,74 @@ function JobsPanel() {
       </div>
 
       {displayJobs.map((j) => {
-        const phase = j.phase || normalizePhase(j.status);
+        const phase = (j.phase || normalizePhase(j.status)) as JobPhase;
+        const isExpanded = expandedJobId === j.id;
+        const queuePos = queuePositions.get(j.id);
+
         return (
-          <div
-            key={j.id}
-            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5"
-            onClick={() => handleClickJob(j)}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="truncate" style={{ color: "var(--text-primary)" }}>{j.name}</div>
-              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                {j.id} · {timeAgo(j.createdAt)}
+          <div key={j.id}>
+            <div
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5"
+              style={{ background: isExpanded ? "rgba(255,255,255,0.03)" : undefined }}
+              onClick={() => handleClickJob(j)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate" style={{ color: "var(--text-primary)" }}>{j.name}</span>
+                  {/* Queue Position Indicator */}
+                  {queuePos !== undefined && (
+                    <span
+                      className="inline-flex items-center text-[10px] px-1.5 py-0 rounded font-mono flex-shrink-0"
+                      style={{ background: "#88888830", color: "#cccccc", border: "1px solid #88888840" }}
+                    >
+                      Queue: #{queuePos}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                  {j.id} · {timeAgo(j.createdAt)}
+                </div>
               </div>
+              <StatusBadge phase={phase} />
             </div>
-            <StatusBadge phase={phase} />
+
+            {/* 확장 뷰: 단계별 타임라인 + 에러 상세 + 재시도 */}
+            {isExpanded && (
+              <div
+                className="px-3 pb-2"
+                style={{ background: "rgba(255,255,255,0.02)" }}
+              >
+                {/* Stepper 타임라인 */}
+                <JobStepper phase={phase} />
+
+                {/* Failed: 에러 상세 + 재시도 버튼 */}
+                {phase === "failed" && (
+                  <div className="mt-1 space-y-2">
+                    <div
+                      className="flex items-start gap-2 px-2 py-1.5 rounded text-xs"
+                      style={{ background: "#f4474715", border: "1px solid #f4474730" }}
+                    >
+                      <AlertTriangle size={12} className="text-[#f44747] flex-shrink-0 mt-0.5" />
+                      <span style={{ color: "#f44747" }}>
+                        {j.error || "Unknown error — no details available"}
+                      </span>
+                    </div>
+                    <button
+                      className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium hover:brightness-110 transition-all disabled:opacity-50"
+                      style={{ background: "#007acc", color: "#ffffff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRetry(j);
+                      }}
+                      disabled={retrying === j.id}
+                    >
+                      <RotateCcw size={11} className={retrying === j.id ? "animate-spin" : ""} />
+                      {retrying === j.id ? "Retrying..." : "Retry"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
