@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getAlgorithm } from "@/lib/algorithms";
 
 export type SidebarSection = "files" | "algorithms" | "jobs" | "nodes" | "settings";
 
@@ -27,6 +28,7 @@ interface IDEState {
   setActiveTab: (tabId: string) => void;
   setFileContent: (tabId: string, content: string) => void;
   setCursorPosition: (pos: CursorPosition) => void;
+  openAlgorithm: (algorithmId: string) => void;
 }
 
 const defaultContents: Record<string, string> = {
@@ -159,4 +161,23 @@ export const useIDEStore = create<IDEState>((set) => ({
     })),
 
   setCursorPosition: (pos) => set({ cursorPosition: pos }),
+
+  openAlgorithm: (algorithmId) =>
+    set((state) => {
+      const algo = getAlgorithm(algorithmId);
+      if (!algo) return state;
+      const tabId = `algo-${algo.id}`;
+      const exists = state.openTabs.find((t) => t.id === tabId);
+      if (exists) return { activeTabId: tabId };
+      const tab: Tab = {
+        id: tabId,
+        title: `${algo.id.replace(/-/g, "_")}.py`,
+        language: "python",
+      };
+      return {
+        openTabs: [...state.openTabs, tab],
+        activeTabId: tabId,
+        fileContents: { ...state.fileContents, [tabId]: algo.code },
+      };
+    }),
 }));
