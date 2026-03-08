@@ -205,6 +205,11 @@ function NodesPanel() {
 }
 
 function SettingsPanel() {
+  const apiUrl = useIDEStore((s) => s.apiUrl);
+  const apiToken = useIDEStore((s) => s.apiToken);
+  const setApiConfig = useIDEStore((s) => s.setApiConfig);
+  const isConnected = useIDEStore((s) => s.isConnected);
+
   return (
     <div className="text-sm p-3 space-y-4">
       <div>
@@ -233,14 +238,33 @@ function SettingsPanel() {
       </div>
       <div>
         <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-          Cluster URL
+          API URL
         </label>
         <input
           type="text"
-          defaultValue="http://localhost:8080"
+          value={apiUrl}
+          onChange={(e) => setApiConfig(e.target.value, apiToken)}
+          placeholder="http://localhost:8080"
           className="w-full mt-1 px-2 py-1 rounded text-sm"
           style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
         />
+      </div>
+      <div>
+        <label className="text-xs uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+          API Token
+        </label>
+        <input
+          type="password"
+          value={apiToken}
+          onChange={(e) => setApiConfig(apiUrl, e.target.value)}
+          placeholder="Bearer token"
+          className="w-full mt-1 px-2 py-1 rounded text-sm"
+          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+        />
+      </div>
+      <div className="flex items-center gap-2 text-xs" style={{ color: isConnected ? "#4ec9b0" : "#f44747" }}>
+        <span className="inline-block w-2 h-2 rounded-full" style={{ background: isConnected ? "#4ec9b0" : "#f44747" }} />
+        {isConnected ? "Connected to cluster" : "Not connected"}
       </div>
       <div className="flex items-center justify-between">
         <span>Auto-save</span>
