@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getAlgorithm } from "@/lib/algorithms";
 
 export type SidebarSection = "files" | "algorithms" | "jobs" | "nodes" | "settings";
+export type ResultTab = "histogram" | "probability" | "statistics" | "console";
 
 export interface Tab {
   id: string;
@@ -22,6 +23,17 @@ interface EditorInstance {
   }>) => void;
 }
 
+export interface JobResultData {
+  counts: Record<string, number>;
+  metadata?: {
+    executionTime?: number;
+    circuitDepth?: number;
+    gateCount?: number;
+    backend?: string;
+    shots?: number;
+  };
+}
+
 interface IDEState {
   activeSidebarSection: SidebarSection | null;
   sidebarOpen: boolean;
@@ -30,6 +42,30 @@ interface IDEState {
   fileContents: Record<string, string>;
   cursorPosition: CursorPosition;
   editorRef: EditorInstance | null;
+
+  // API config
+  apiUrl: string;
+  apiToken: string;
+  setApiConfig: (url: string, token: string) => void;
+
+  // Connection
+  isConnected: boolean;
+  setConnected: (v: boolean) => void;
+
+  // Simulation state
+  isRunning: boolean;
+  setRunning: (v: boolean) => void;
+  currentJobId: string | null;
+  setCurrentJobId: (id: string | null) => void;
+  jobResult: JobResultData | null;
+  setJobResult: (r: JobResultData | null) => void;
+  consoleLogs: string[];
+  appendLog: (msg: string) => void;
+  clearLogs: () => void;
+  shots: number;
+  setShots: (s: number) => void;
+  activeResultTab: ResultTab;
+  setActiveResultTab: (t: ResultTab) => void;
 
   toggleSidebar: (section: SidebarSection) => void;
   openTab: (tab: Tab) => void;
@@ -136,6 +172,30 @@ export const useIDEStore = create<IDEState>((set) => ({
   fileContents: { ...defaultContents },
   cursorPosition: { lineNumber: 1, column: 1 },
   editorRef: null,
+
+  // API config
+  apiUrl: "http://localhost:8080",
+  apiToken: "",
+  setApiConfig: (url, token) => set({ apiUrl: url, apiToken: token }),
+
+  // Connection
+  isConnected: false,
+  setConnected: (v) => set({ isConnected: v }),
+
+  // Simulation
+  isRunning: false,
+  setRunning: (v) => set({ isRunning: v }),
+  currentJobId: null,
+  setCurrentJobId: (id) => set({ currentJobId: id }),
+  jobResult: null,
+  setJobResult: (r) => set({ jobResult: r }),
+  consoleLogs: [],
+  appendLog: (msg) => set((s) => ({ consoleLogs: [...s.consoleLogs, `[${new Date().toLocaleTimeString()}] ${msg}`] })),
+  clearLogs: () => set({ consoleLogs: [] }),
+  shots: 1024,
+  setShots: (s) => set({ shots: s }),
+  activeResultTab: "histogram",
+  setActiveResultTab: (t) => set({ activeResultTab: t }),
 
   toggleSidebar: (section) =>
     set((state) => {

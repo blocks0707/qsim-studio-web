@@ -1,21 +1,44 @@
 "use client";
 
-import { GitBranch, AlertCircle, AlertTriangle } from "lucide-react";
+import { GitBranch, AlertCircle, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
+import { createClient } from "@/lib/api";
+import { useEffect, useRef } from "react";
 
 export function StatusBar() {
   const cursorPosition = useIDEStore((s) => s.cursorPosition);
   const activeTabId = useIDEStore((s) => s.activeTabId);
   const openTabs = useIDEStore((s) => s.openTabs);
+  const isConnected = useIDEStore((s) => s.isConnected);
+  const isRunning = useIDEStore((s) => s.isRunning);
+  const apiUrl = useIDEStore((s) => s.apiUrl);
+  const apiToken = useIDEStore((s) => s.apiToken);
+  const setConnected = useIDEStore((s) => s.setConnected);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const language = activeTab ? getLanguageDisplayName(getLanguageFromFilename(activeTab.title)) : "Plain Text";
+
+  useEffect(() => {
+    const check = async () => {
+      if (!apiUrl || !apiToken) {
+        setConnected(false);
+        return;
+      }
+      const client = createClient(apiUrl, apiToken);
+      const ok = await client.checkHealth();
+      setConnected(ok);
+    };
+    check();
+    intervalRef.current = setInterval(check, 30000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [apiUrl, apiToken, setConnected]);
 
   return (
     <div
       className="h-[22px] flex items-center justify-between px-2 text-xs flex-shrink-0 text-white"
       style={{ background: "var(--bg-statusbar)" }}
     >
-      {/* Left side */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1">
           <GitBranch size={12} />
@@ -32,12 +55,22 @@ export function StatusBar() {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-[#4ec9b0]" />
-          <span>Connected · 3 nodes</span>
+          {isConnected ? (
+            <>
+              <Wifi size={12} className="text-[#4ec9b0]" />
+              <span className="text-[#4ec9b0]">Connected</span>
+            </>
+          ) : (
+            <>
+              <WifiOff size={12} className="text-[#f44747]" />
+              <span className="text-[#f44747]">Disconnected</span>
+            </>
+          )}
         </div>
+        {isRunning && (
+          <span className="text-[#dcdcaa]">⚡ Running...</span>
+        )}
       </div>
-
-      {/* Right side */}
       <div className="flex items-center gap-3">
         <span>Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}</span>
         <span>Spaces: 4</span>
