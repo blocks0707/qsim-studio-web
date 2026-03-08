@@ -1,56 +1,7 @@
 "use client";
 
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
-
-function CircuitViewer() {
-  return (
-    <div className="h-full flex flex-col" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div
-        className="h-9 flex items-center px-4 text-[11px] font-semibold tracking-wider flex-shrink-0 uppercase"
-        style={{ color: "var(--text-secondary)", background: "var(--bg-sidebar)" }}
-      >
-        CIRCUIT VIEWER
-      </div>
-      <div className="flex-1 flex items-center justify-center p-4" style={{ background: "var(--bg-editor)" }}>
-        <svg viewBox="0 0 400 160" className="w-full max-w-[380px]" style={{ opacity: 0.8 }}>
-          {/* Qubit lines */}
-          <line x1="60" y1="40" x2="360" y2="40" stroke="#858585" strokeWidth="1" />
-          <line x1="60" y1="80" x2="360" y2="80" stroke="#858585" strokeWidth="1" />
-          <line x1="60" y1="120" x2="360" y2="120" stroke="#858585" strokeWidth="1" />
-
-          {/* Labels */}
-          <text x="10" y="44" fill="#cccccc" fontSize="12" fontFamily="monospace">q₀</text>
-          <text x="10" y="84" fill="#cccccc" fontSize="12" fontFamily="monospace">q₁</text>
-          <text x="10" y="124" fill="#cccccc" fontSize="12" fontFamily="monospace">q₂</text>
-
-          {/* H gate */}
-          <rect x="80" y="22" width="36" height="36" fill="none" stroke="#4ec9b0" strokeWidth="1.5" rx="2" />
-          <text x="98" y="45" fill="#4ec9b0" fontSize="14" textAnchor="middle" fontFamily="monospace" fontWeight="bold">H</text>
-
-          {/* CNOT gate */}
-          <line x1="160" y1="40" x2="160" y2="80" stroke="#569cd6" strokeWidth="1.5" />
-          <circle cx="160" cy="40" r="5" fill="#569cd6" />
-          <circle cx="160" cy="80" r="12" fill="none" stroke="#569cd6" strokeWidth="1.5" />
-          <line x1="148" y1="80" x2="172" y2="80" stroke="#569cd6" strokeWidth="1.5" />
-          <line x1="160" y1="68" x2="160" y2="92" stroke="#569cd6" strokeWidth="1.5" />
-
-          {/* X gate */}
-          <rect x="220" y="102" width="36" height="36" fill="none" stroke="#ce9178" strokeWidth="1.5" rx="2" />
-          <text x="238" y="125" fill="#ce9178" fontSize="14" textAnchor="middle" fontFamily="monospace" fontWeight="bold">X</text>
-
-          {/* Measurement */}
-          <rect x="300" y="22" width="36" height="36" fill="none" stroke="#dcdcaa" strokeWidth="1.5" rx="2" />
-          <path d="M308 48 Q318 32 328 48" fill="none" stroke="#dcdcaa" strokeWidth="1.2" />
-          <line x1="318" y1="46" x2="326" y2="30" stroke="#dcdcaa" strokeWidth="1.2" />
-
-          <rect x="300" y="62" width="36" height="36" fill="none" stroke="#dcdcaa" strokeWidth="1.5" rx="2" />
-          <path d="M308 88 Q318 72 328 88" fill="none" stroke="#dcdcaa" strokeWidth="1.2" />
-          <line x1="318" y1="86" x2="326" y2="70" stroke="#dcdcaa" strokeWidth="1.2" />
-        </svg>
-      </div>
-    </div>
-  );
-}
+import { CircuitViewer } from "./CircuitViewer";
 
 function ResultsPanel() {
   const results = [

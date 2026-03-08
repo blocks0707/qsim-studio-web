@@ -14,6 +14,14 @@ export interface CursorPosition {
   column: number;
 }
 
+interface EditorInstance {
+  executeEdits: (source: string, edits: Array<{
+    range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+    text: string;
+    forceMoveMarkers?: boolean;
+  }>) => void;
+}
+
 interface IDEState {
   activeSidebarSection: SidebarSection | null;
   sidebarOpen: boolean;
@@ -21,6 +29,7 @@ interface IDEState {
   activeTabId: string | null;
   fileContents: Record<string, string>;
   cursorPosition: CursorPosition;
+  editorRef: EditorInstance | null;
 
   toggleSidebar: (section: SidebarSection) => void;
   openTab: (tab: Tab) => void;
@@ -28,6 +37,7 @@ interface IDEState {
   setActiveTab: (tabId: string) => void;
   setFileContent: (tabId: string, content: string) => void;
   setCursorPosition: (pos: CursorPosition) => void;
+  setEditorRef: (ref: EditorInstance | null) => void;
   openAlgorithm: (algorithmId: string) => void;
 }
 
@@ -125,6 +135,7 @@ export const useIDEStore = create<IDEState>((set) => ({
   activeTabId: "bell-state",
   fileContents: { ...defaultContents },
   cursorPosition: { lineNumber: 1, column: 1 },
+  editorRef: null,
 
   toggleSidebar: (section) =>
     set((state) => {
@@ -161,6 +172,8 @@ export const useIDEStore = create<IDEState>((set) => ({
     })),
 
   setCursorPosition: (pos) => set({ cursorPosition: pos }),
+
+  setEditorRef: (ref) => set({ editorRef: ref }),
 
   openAlgorithm: (algorithmId) =>
     set((state) => {

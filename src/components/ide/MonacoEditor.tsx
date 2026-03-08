@@ -15,6 +15,7 @@ export function MonacoEditor() {
   const fileContents = useIDEStore((s) => s.fileContents);
   const setFileContent = useIDEStore((s) => s.setFileContent);
   const setCursorPosition = useIDEStore((s) => s.setCursorPosition);
+  const setEditorRef = useIDEStore((s) => s.setEditorRef);
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const language = activeTab ? getLanguageFromFilename(activeTab.title) : "plaintext";
@@ -23,6 +24,7 @@ export function MonacoEditor() {
   const handleMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setEditorRef(editor);
 
     registerLanguages(monaco);
 
@@ -63,7 +65,7 @@ export function MonacoEditor() {
     });
 
     editor.focus();
-  }, [setCursorPosition]);
+  }, [setCursorPosition, setEditorRef]);
 
   const handleChange: OnChange = useCallback(
     (value) => {
