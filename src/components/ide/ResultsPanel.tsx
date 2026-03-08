@@ -1,8 +1,12 @@
 "use client";
 
 import { useIDEStore, type ResultTab } from "@/stores/ideStore";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import dynamic from "next/dynamic";
+import { JobProgress } from "./JobProgress";
+import { StatusBadge } from "./StatusBadge";
+import type { JobPhase } from "@/lib/api";
 
 const HistogramChart = dynamic(() => import("./HistogramChart").then((m) => m.HistogramChart), {
   ssr: false,
@@ -89,10 +93,89 @@ function ProbabilityTab() {
   );
 }
 
+function ProgressBar() {
+  const jobPhase = useIDEStore((s) => s.jobPhase);
+  const jobStartTime = useIDEStore((s) => s.jobStartTime);
+  const estimatedTimeSec = useIDEStore((s) => s.jobEstimatedTimeSec);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (jobPhase !== "running" || !jobStartTime || !estimatedTimeSec) {
+      if (jobPhase === "succeeded") setProgress(100);
+      return;
+    }
+
+    const iv = setInterval(() => {
+      const elapsed = (Date.now() - new Date(jobStartTime).getTime()) / 1000;
+      const pct = Math.min(95, (elapsed / estimatedTimeSec) * 100);
+      setProgress(pct);
+    }, 200);
+
+    return () => clearInterval(iv);
+  }, [jobPhase, jobStartTime, estimatedTimeSec]);
+
+  if (!jobPhase || jobPhase === "succeeded" || jobPhase === "failed" || jobPhase === "cancelled") {
+    if (jobPhase === "succeeded") {
+      return (
+        <div className="w-full h-2 rounded overflow-hidden" style={{ background: "var(--bg-sidebar)" }}>
+          <div className="h-full rounded transition-all" style={{ width: "100%", background: "#6a9955" }} />
+        </div>
+      );
+    }
+    return null;
+  }
+
+  const remaining = estimatedTimeSec
+    ? Math.max(0, estimatedTimeSec - (Date.now() - new Date(jobStartTime || Date.now()).getTime()) / 1000)
+    : null;
+
+  return (
+    <div className="space-y-1">
+      <div className="w-full h-2 rounded overflow-hidden" style={{ background: "var(--bg-sidebar)" }}>
+        <div
+          className="h-full rounded transition-all"
+          style={{ width: `${progress}%`, background: "#569cd6" }}
+        />
+      </div>
+      {remaining !== null && (
+        <div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+          Running... ~{remaining.toFixed(0)}s remaining
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RetryButton() {
+  const jobPhase = useIDEStore((s) => s.jobPhase);
+  const lastCode = useIDEStore((s) => s.lastSubmittedCode);
+
+  if (jobPhase !== "failed" || !lastCode) return null;
+
+  const handleRetry = () => {
+    // Trigger re-run by dispatching a custom event that EditorArea listens to
+    window.dispatchEvent(new CustomEvent("qsim-retry-job"));
+  };
+
+  return (
+    <button
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium hover:opacity-80 transition-opacity"
+      style={{ background: "#f4474722", color: "#f44747", border: "1px solid #f4474744" }}
+      onClick={handleRetry}
+    >
+      <RotateCcw size={12} />
+      Retry
+    </button>
+  );
+}
+
 function StatisticsTab() {
   const jobResult = useIDEStore((s) => s.jobResult);
   const currentJobId = useIDEStore((s) => s.currentJobId);
-  const isRunning = useIDEStore((s) => s.isRunning);
+  const jobPhase = useIDEStore((s) => s.jobPhase);
+  const assignedNode = useIDEStore((s) => s.jobAssignedNode);
+  const assignedPool = useIDEStore((s) => s.jobAssignedPool);
+  const qubits = useIDEStore((s) => s.jobQubits);
   const counts = useCounts();
   const totalShots = Object.values(counts).reduce((a, b) => a + b, 0);
   const meta = jobResult?.metadata;
@@ -106,6 +189,9 @@ function StatisticsTab() {
 
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* Progress bar */}
+      <ProgressBar />
+
       <div className="grid grid-cols-2 gap-2">
         {cards.map((c) => (
           <div
@@ -118,15 +204,34 @@ function StatisticsTab() {
           </div>
         ))}
       </div>
+
+      {/* Execution info */}
       <div className="text-xs space-y-1 p-3 rounded" style={{ background: "var(--bg-sidebar)", border: "1px solid var(--border)" }}>
         <div><span style={{ color: "var(--text-secondary)" }}>Job ID: </span><span className="font-mono">{currentJobId || "—"}</span></div>
         <div><span style={{ color: "var(--text-secondary)" }}>Backend: </span><span className="font-mono">{meta?.backend || "—"}</span></div>
         <div><span style={{ color: "var(--text-secondary)" }}>Status: </span>
-          <span style={{ color: isRunning ? "#dcdcaa" : "#6a9955" }}>
-            {isRunning ? "Running..." : jobResult ? "Completed ✓" : "Idle"}
-          </span>
+          {jobPhase ? <StatusBadge phase={jobPhase} /> : (
+            <span style={{ color: jobResult ? "#6a9955" : "var(--text-secondary)" }}>
+              {jobResult ? "Completed ✓" : "Idle"}
+            </span>
+          )}
         </div>
+        {assignedNode && (
+          <div><span style={{ color: "var(--text-secondary)" }}>Node: </span><span className="font-mono">{assignedNode}</span></div>
+        )}
+        {assignedPool && (
+          <div><span style={{ color: "var(--text-secondary)" }}>Pool: </span><span className="font-mono">{assignedPool}</span></div>
+        )}
+        {qubits != null && (
+          <div><span style={{ color: "var(--text-secondary)" }}>Qubits: </span><span>{qubits}</span></div>
+        )}
+        {meta?.complexityClass && (
+          <div><span style={{ color: "var(--text-secondary)" }}>Complexity: </span><span>Class {meta.complexityClass}</span></div>
+        )}
       </div>
+
+      {/* Retry button */}
+      <RetryButton />
     </div>
   );
 }
@@ -144,7 +249,8 @@ function ConsoleTab() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-end px-2 py-1 flex-shrink-0">
+      <div className="flex items-center justify-between px-2 py-1 flex-shrink-0">
+        <RetryButton />
         <button
           className="text-xs px-2 py-0.5 rounded hover:bg-white/10"
           style={{ color: "var(--text-secondary)" }}
@@ -162,7 +268,13 @@ function ConsoleTab() {
           <div style={{ color: "#6a9955" }}>{"// Console output will appear here..."}</div>
         ) : (
           logs.map((log, i) => (
-            <div key={i} className={log.includes("ERROR") || log.includes("Failed") ? "text-[#f44747]" : ""}>
+            <div key={i} className={
+              log.includes("ERROR") || log.includes("Failed") || log.includes("✗")
+                ? "text-[#f44747]"
+                : log.includes("✓")
+                ? "text-[#6a9955]"
+                : ""
+            }>
               {log}
             </div>
           ))
@@ -186,6 +298,9 @@ export function ResultsPanel() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Job Progress Stepper */}
+      <JobProgress />
+
       <div
         className="flex items-center h-9 flex-shrink-0 border-b"
         style={{ background: "var(--bg-sidebar)", borderColor: "var(--border)" }}

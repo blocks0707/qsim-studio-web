@@ -5,8 +5,9 @@ import { Play, Square, Loader2, ChevronDown } from "lucide-react";
 import { TabBar } from "./TabBar";
 import { StudioHome } from "./StudioHome";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
-import { createClient, extractResult } from "@/lib/api";
-import { useCallback, useRef, useState } from "react";
+import { createClient, extractResult, normalizePhase } from "@/lib/api";
+import type { JobPhase } from "@/lib/api";
+import { useCallback, useRef, useState, useEffect } from "react";
 
 const MonacoEditor = dynamic(
   () => import("./MonacoEditor").then((m) => ({ default: m.MonacoEditor })),
@@ -14,6 +15,56 @@ const MonacoEditor = dynamic(
 );
 
 const SHOTS_OPTIONS = [256, 512, 1024, 2048, 4096];
+
+function ts(): string {
+  return new Date().toLocaleTimeString("en-US", { hour12: false });
+}
+
+function phaseLogMessage(phase: JobPhase, status: Record<string, unknown>): string {
+  switch (phase) {
+    case "pending":
+      return `[${ts()}] 📤 Job submitted: ${status.id || ""}`;
+    case "analyzing":
+      return `[${ts()}] 🔍 Analyzing circuit complexity...`;
+    case "scheduling": {
+      const pool = status.assignedPool || "default";
+      return `[${ts()}] 📋 Scheduling on ${pool} pool...`;
+    }
+    case "running": {
+      const est = status.estimatedTimeSec ? ` (est. ~${status.estimatedTimeSec}s)` : "";
+      return `[${ts()}] ⚡ Running simulation${est}...`;
+    }
+    case "succeeded": {
+      const execTime = status.executionTime ? `${Number(status.executionTime).toFixed(1)}s` : "—";
+      return `[${ts()}] ✓ Simulation completed in ${execTime}`;
+    }
+    case "failed":
+      return `[${ts()}] ✗ Job failed — ${status.error || "Unknown error"}`;
+    case "cancelled":
+      return `[${ts()}] ⊘ Job cancelled`;
+    default:
+      return `[${ts()}] Status: ${phase}`;
+  }
+}
+
+function phaseTransitionLog(prev: JobPhase, next: JobPhase, status: Record<string, unknown>): string[] {
+  const logs: string[] = [];
+  // Add completion message for previous phase
+  if (prev === "analyzing" && (next === "scheduling" || next === "running" || next === "succeeded")) {
+    const q = status.qubits ? `${status.qubits} qubits` : "";
+    const d = status.circuitDepth ? `depth ${status.circuitDepth}` : "";
+    const cls = status.complexityClass ? `class ${status.complexityClass}` : "";
+    const parts = [q, d, cls].filter(Boolean).join(", ");
+    logs.push(`[${ts()}] ✓ Analysis complete${parts ? `: ${parts}` : ""}`);
+  }
+  if (prev === "scheduling" && (next === "running" || next === "succeeded")) {
+    const node = status.assignedNode || "";
+    logs.push(`[${ts()}] ✓ Assigned to ${node || "compute node"}`);
+  }
+  // Add new phase message
+  logs.push(phaseLogMessage(next, status));
+  return logs;
+}
 
 function EditorToolbar() {
   const activeTabId = useIDEStore((s) => s.activeTabId);
@@ -23,11 +74,12 @@ function EditorToolbar() {
   const setShots = useIDEStore((s) => s.setShots);
   const [showShotsDropdown, setShowShotsDropdown] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPhaseRef = useRef<JobPhase | null>(null);
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const language = activeTab ? getLanguageDisplayName(getLanguageFromFilename(activeTab.title)) : "";
 
-  const handleRun = useCallback(async () => {
+  const runJob = useCallback(async () => {
     const state = useIDEStore.getState();
     if (state.isRunning || !state.activeTabId) return;
 
@@ -35,20 +87,53 @@ function EditorToolbar() {
     const tab = state.openTabs.find((t) => t.id === state.activeTabId);
     const lang = tab ? getLanguageFromFilename(tab.title) : "python";
 
-    const { setRunning, appendLog, setCurrentJobId, setJobResult, setActiveResultTab } = useIDEStore.getState();
+    const {
+      setRunning, appendLog, setCurrentJobId, setJobResult, setActiveResultTab,
+      setJobPhase, setJobEstimatedTimeSec, setJobStartTime, setJobAssignedNode,
+      setJobAssignedPool, setJobQubits, setLastSubmittedCode, setLastSubmittedLanguage,
+      clearLogs,
+    } = useIDEStore.getState();
 
+    clearLogs();
     setRunning(true);
+    setJobResult(null);
+    setJobPhase("pending");
+    setJobEstimatedTimeSec(null);
+    setJobStartTime(null);
+    setJobAssignedNode(null);
+    setJobAssignedPool(null);
+    setJobQubits(null);
+    setLastSubmittedCode(code);
+    setLastSubmittedLanguage(lang);
+    lastPhaseRef.current = null;
     setActiveResultTab("console");
-    appendLog("Submitting job...");
+    appendLog(`[${ts()}] 📤 Submitting job...`);
 
     const { apiUrl, apiToken } = state;
     if (!apiUrl || !apiToken) {
-      appendLog("⚠ API not configured. Using mock results.");
-      await new Promise((r) => setTimeout(r, 1500));
-      appendLog("Mock simulation completed.");
+      appendLog(`[${ts()}] ⚠ API not configured. Using mock results.`);
+      setJobPhase("analyzing");
+      await new Promise((r) => setTimeout(r, 500));
+      appendLog(`[${ts()}] 🔍 Analyzing circuit complexity...`);
+      setJobPhase("scheduling");
+      await new Promise((r) => setTimeout(r, 400));
+      appendLog(`[${ts()}] ✓ Analysis complete: 2 qubits, depth 4, class A`);
+      appendLog(`[${ts()}] 📋 Scheduling on cpu pool...`);
+      setJobPhase("running");
+      setJobStartTime(new Date().toISOString());
+      setJobEstimatedTimeSec(2);
+      setJobAssignedNode("mock-node-01");
+      setJobAssignedPool("cpu");
+      setJobQubits(2);
+      await new Promise((r) => setTimeout(r, 300));
+      appendLog(`[${ts()}] ✓ Assigned to mock-node-01`);
+      appendLog(`[${ts()}] ⚡ Running simulation (est. ~2s)...`);
+      await new Promise((r) => setTimeout(r, 1200));
+      appendLog(`[${ts()}] ✓ Simulation completed in 1.2s`);
+      setJobPhase("succeeded");
       setJobResult({
         counts: { "00": 512, "11": 498, "01": 8, "10": 6 },
-        metadata: { executionTime: 0.34, circuitDepth: 4, gateCount: 3, backend: "mock-simulator", shots: state.shots },
+        metadata: { executionTime: 1.2, circuitDepth: 4, gateCount: 3, backend: "mock-simulator", shots: state.shots, complexityClass: "A" },
       });
       setCurrentJobId("mock-" + Date.now());
       setRunning(false);
@@ -64,44 +149,72 @@ function EditorToolbar() {
         shots: state.shots,
       });
       setCurrentJobId(id);
-      appendLog(`Job submitted: ${id}`);
-      appendLog("Polling for results...");
+      appendLog(`[${ts()}] 📤 Job submitted: ${id}`);
+      lastPhaseRef.current = "pending";
 
       pollRef.current = setInterval(async () => {
         try {
           const status = await client.getJobStatus(id);
-          appendLog(`Status: ${status.status}`);
+          const phase = normalizePhase(status.status);
+          const prev = lastPhaseRef.current;
 
-          if (status.status === "completed") {
+          // Update state from API
+          if (status.estimatedTimeSec) setJobEstimatedTimeSec(status.estimatedTimeSec);
+          if (status.startTime) setJobStartTime(status.startTime);
+          if (status.assignedNode) setJobAssignedNode(status.assignedNode);
+          if (status.assignedPool) setJobAssignedPool(status.assignedPool);
+          if (status.qubits) setJobQubits(status.qubits);
+
+          // Only log on phase change
+          if (phase !== prev) {
+            setJobPhase(phase);
+            const statusObj = status as unknown as Record<string, unknown>;
+            if (prev) {
+              const msgs = phaseTransitionLog(prev, phase, statusObj);
+              msgs.forEach((m) => appendLog(m));
+            } else {
+              appendLog(phaseLogMessage(phase, statusObj));
+            }
+            lastPhaseRef.current = phase;
+          }
+
+          if (phase === "succeeded") {
             clearInterval(pollRef.current!);
             pollRef.current = null;
             const rawResult = await client.getJobResult(id);
             const result = extractResult(rawResult);
             setJobResult(result);
-            appendLog("✓ Simulation completed successfully.");
             setRunning(false);
             setActiveResultTab("histogram");
-          } else if (status.status === "failed") {
+          } else if (phase === "failed" || phase === "cancelled") {
             clearInterval(pollRef.current!);
             pollRef.current = null;
-            appendLog(`ERROR: Job failed — ${status.error || "Unknown error"}`);
             setRunning(false);
           }
         } catch (err) {
           clearInterval(pollRef.current!);
           pollRef.current = null;
-          appendLog(`ERROR: Polling failed — ${err instanceof Error ? err.message : String(err)}`);
+          appendLog(`[${ts()}] ✗ ERROR: Polling failed — ${err instanceof Error ? err.message : String(err)}`);
+          setJobPhase("failed");
           setRunning(false);
         }
       }, 2000);
     } catch (err) {
-      appendLog(`ERROR: Failed to submit — ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`[${ts()}] ✗ ERROR: Failed to submit — ${err instanceof Error ? err.message : String(err)}`);
+      setJobPhase("failed");
       setRunning(false);
     }
   }, []);
 
+  // Listen for retry events
+  useEffect(() => {
+    const handler = () => runJob();
+    window.addEventListener("qsim-retry-job", handler);
+    return () => window.removeEventListener("qsim-retry-job", handler);
+  }, [runJob]);
+
   const handleStop = useCallback(async () => {
-    const { currentJobId, apiUrl, apiToken, setRunning, appendLog } = useIDEStore.getState();
+    const { currentJobId, apiUrl, apiToken, setRunning, appendLog, setJobPhase } = useIDEStore.getState();
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -110,13 +223,13 @@ function EditorToolbar() {
       try {
         const client = createClient(apiUrl, apiToken);
         await client.cancelJob(currentJobId);
-        appendLog(`Job ${currentJobId} cancelled.`);
+        appendLog(`[${ts()}] ⊘ Job ${currentJobId} cancelled.`);
       } catch {
-        appendLog("Failed to cancel job on server.");
+        appendLog(`[${ts()}] ⚠ Failed to cancel job on server.`);
       }
     }
+    setJobPhase("cancelled");
     setRunning(false);
-    appendLog("Stopped.");
   }, []);
 
   if (!activeTabId) return null;
@@ -141,7 +254,7 @@ function EditorToolbar() {
           <button
             className="flex items-center gap-1 px-2 py-0.5 rounded text-xs hover:opacity-80 transition-opacity"
             style={{ background: "#4ec9b022", color: "#4ec9b0" }}
-            onClick={handleRun}
+            onClick={runJob}
             title="Run simulation"
           >
             {isRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
