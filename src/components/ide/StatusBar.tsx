@@ -1,8 +1,15 @@
 "use client";
 
 import { GitBranch, AlertCircle, AlertTriangle } from "lucide-react";
+import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
 
 export function StatusBar() {
+  const cursorPosition = useIDEStore((s) => s.cursorPosition);
+  const activeTabId = useIDEStore((s) => s.activeTabId);
+  const openTabs = useIDEStore((s) => s.openTabs);
+  const activeTab = openTabs.find((t) => t.id === activeTabId);
+  const language = activeTab ? getLanguageDisplayName(getLanguageFromFilename(activeTab.title)) : "Plain Text";
+
   return (
     <div
       className="h-[22px] flex items-center justify-between px-2 text-xs flex-shrink-0 text-white"
@@ -32,10 +39,10 @@ export function StatusBar() {
 
       {/* Right side */}
       <div className="flex items-center gap-3">
-        <span>Ln 1, Col 1</span>
+        <span>Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}</span>
         <span>Spaces: 4</span>
         <span>UTF-8</span>
-        <span>Python</span>
+        <span>{language}</span>
       </div>
     </div>
   );
