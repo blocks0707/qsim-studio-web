@@ -16,6 +16,8 @@ import {
   WifiOff,
   RefreshCw,
 } from "lucide-react";
+import { normalizePhase } from "@/lib/api";
+import { StatusBadge } from "./StatusBadge";
 import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ───────── FilesPanel ───────── */
@@ -248,11 +250,12 @@ function AlgorithmsPanel() {
 /* ───────── JobsPanel ───────── */
 
 const mockJobs: JobInfo[] = [
-  { id: "job-001", name: "Bell State Sim", status: "running", createdAt: new Date(Date.now() - 120000).toISOString() },
-  { id: "job-002", name: "Grover 8-qubit", status: "completed", createdAt: new Date(Date.now() - 900000).toISOString() },
-  { id: "job-003", name: "VQE H2 molecule", status: "completed", createdAt: new Date(Date.now() - 3600000).toISOString() },
-  { id: "job-004", name: "QAOA MaxCut", status: "failed", createdAt: new Date(Date.now() - 7200000).toISOString() },
-  { id: "job-005", name: "QFT 16-qubit", status: "queued", createdAt: new Date().toISOString() },
+  { id: "job-001", name: "Bell State Sim", status: "running", phase: "running", createdAt: new Date(Date.now() - 120000).toISOString() },
+  { id: "job-002", name: "Grover 8-qubit", status: "succeeded", phase: "succeeded", createdAt: new Date(Date.now() - 900000).toISOString() },
+  { id: "job-003", name: "VQE H2 molecule", status: "succeeded", phase: "succeeded", createdAt: new Date(Date.now() - 3600000).toISOString() },
+  { id: "job-004", name: "QAOA MaxCut", status: "failed", phase: "failed", createdAt: new Date(Date.now() - 7200000).toISOString() },
+  { id: "job-005", name: "QFT 16-qubit", status: "pending", phase: "pending", createdAt: new Date().toISOString() },
+  { id: "job-006", name: "QPE 4-qubit", status: "analyzing", phase: "analyzing", createdAt: new Date(Date.now() - 30000).toISOString() },
 ];
 
 function timeAgo(iso?: string): string {
@@ -309,7 +312,8 @@ function JobsPanel() {
   }, [fetchJobs]);
 
   const handleClickJob = async (job: JobInfo) => {
-    if (job.status !== "completed") return;
+    const phase = job.phase || normalizePhase(job.status);
+    if (phase !== "succeeded") return;
     if (!apiUrl || !apiToken) return;
     try {
       const client = createClient(apiUrl, apiToken);
@@ -320,14 +324,6 @@ function JobsPanel() {
     } catch {
       // ignore
     }
-  };
-
-  const statusColor: Record<string, string> = {
-    running: "#4ec9b0",
-    completed: "#6a9955",
-    failed: "#f44747",
-    queued: "#dcdcaa",
-    cancelled: "#888",
   };
 
   const displayJobs = jobs.length > 0 ? jobs : mockJobs;
@@ -346,34 +342,24 @@ function JobsPanel() {
         </button>
       </div>
 
-      {displayJobs.map((j) => (
-        <div
-          key={j.id}
-          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5"
-          onClick={() => handleClickJob(j)}
-        >
-          {j.status === "running" ? (
-            <Play size={14} style={{ color: statusColor[j.status] }} />
-          ) : (
-            <Circle size={8} fill={statusColor[j.status] || "#888"} style={{ color: statusColor[j.status] || "#888" }} />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="truncate" style={{ color: "var(--text-primary)" }}>{j.name}</div>
-            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {j.id} · {timeAgo(j.createdAt)}
-            </div>
-          </div>
-          <span
-            className="text-xs px-1.5 py-0.5 rounded"
-            style={{
-              color: statusColor[j.status] || "#888",
-              background: `${statusColor[j.status] || "#888"}20`,
-            }}
+      {displayJobs.map((j) => {
+        const phase = j.phase || normalizePhase(j.status);
+        return (
+          <div
+            key={j.id}
+            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5"
+            onClick={() => handleClickJob(j)}
           >
-            {j.status}
-          </span>
-        </div>
-      ))}
+            <div className="flex-1 min-w-0">
+              <div className="truncate" style={{ color: "var(--text-primary)" }}>{j.name}</div>
+              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                {j.id} · {timeAgo(j.createdAt)}
+              </div>
+            </div>
+            <StatusBadge phase={phase} />
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getAlgorithm } from "@/lib/algorithms";
+import type { JobPhase } from "@/lib/api";
 import {
   loadFileTree,
   saveFileTree,
@@ -40,14 +41,23 @@ export interface JobResultData {
     gateCount?: number;
     backend?: string;
     shots?: number;
+    complexityClass?: string;
   };
 }
 
 export interface JobInfo {
   id: string;
   name: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: string;
+  phase?: JobPhase;
   createdAt?: string;
+  assignedNode?: string;
+  assignedPool?: string;
+  qubits?: number;
+  estimatedTimeSec?: number;
+  startTime?: string;
+  completionTime?: string;
+  executionTime?: number;
 }
 
 export interface EditorSettings {
@@ -115,6 +125,24 @@ interface IDEState {
   fileContents: Record<string, string>;
   cursorPosition: CursorPosition;
   editorRef: EditorInstance | null;
+
+  // Job phase tracking
+  jobPhase: JobPhase | null;
+  setJobPhase: (p: JobPhase | null) => void;
+  jobEstimatedTimeSec: number | null;
+  setJobEstimatedTimeSec: (t: number | null) => void;
+  jobStartTime: string | null;
+  setJobStartTime: (t: string | null) => void;
+  jobAssignedNode: string | null;
+  setJobAssignedNode: (n: string | null) => void;
+  jobAssignedPool: string | null;
+  setJobAssignedPool: (p: string | null) => void;
+  jobQubits: number | null;
+  setJobQubits: (q: number | null) => void;
+  lastSubmittedCode: string | null;
+  setLastSubmittedCode: (c: string | null) => void;
+  lastSubmittedLanguage: string | null;
+  setLastSubmittedLanguage: (l: string | null) => void;
 
   // Settings
   settingsOpen: boolean;
@@ -267,7 +295,6 @@ export const useIDEStore = create<IDEState>((set, get) => ({
       };
     });
 
-    // Open in editor
     get().openFileInEditor(file);
     return id;
   },
@@ -317,9 +344,7 @@ export const useIDEStore = create<IDEState>((set, get) => ({
       const content = loadFileContent(f.path);
       if (content !== null) fileContents[f.id] = content;
     }
-    // Load persisted settings
     const saved = loadSettings();
-    // Also keep default contents for algorithm tabs
     set((s) => ({
       files,
       fileContents: { ...defaultContents, ...fileContents, ...s.fileContents },
@@ -381,6 +406,24 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   cursorPosition: { lineNumber: 1, column: 1 },
   editorRef: null,
 
+  // Job phase tracking
+  jobPhase: null,
+  setJobPhase: (p) => set({ jobPhase: p }),
+  jobEstimatedTimeSec: null,
+  setJobEstimatedTimeSec: (t) => set({ jobEstimatedTimeSec: t }),
+  jobStartTime: null,
+  setJobStartTime: (t) => set({ jobStartTime: t }),
+  jobAssignedNode: null,
+  setJobAssignedNode: (n) => set({ jobAssignedNode: n }),
+  jobAssignedPool: null,
+  setJobAssignedPool: (p) => set({ jobAssignedPool: p }),
+  jobQubits: null,
+  setJobQubits: (q) => set({ jobQubits: q }),
+  lastSubmittedCode: null,
+  setLastSubmittedCode: (c) => set({ lastSubmittedCode: c }),
+  lastSubmittedLanguage: null,
+  setLastSubmittedLanguage: (l) => set({ lastSubmittedLanguage: l }),
+
   // Settings
   settingsOpen: false,
   setSettingsOpen: (v) => set({ settingsOpen: v }),
@@ -413,7 +456,7 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   jobResult: null,
   setJobResult: (r) => set({ jobResult: r }),
   consoleLogs: [],
-  appendLog: (msg) => set((s) => ({ consoleLogs: [...s.consoleLogs, `[${new Date().toLocaleTimeString()}] ${msg}`] })),
+  appendLog: (msg) => set((s) => ({ consoleLogs: [...s.consoleLogs, msg] })),
   clearLogs: () => set({ consoleLogs: [] }),
   shots: 1024,
   setShots: (s) => set({ shots: s }),
@@ -451,7 +494,6 @@ export const useIDEStore = create<IDEState>((set, get) => ({
 
   setFileContent: (tabId, content) =>
     set((state) => {
-      // Mark dirty for filesystem files
       const dirty = new Set(state.dirtyFiles);
       if (state.files.some((f) => f.id === tabId)) {
         dirty.add(tabId);

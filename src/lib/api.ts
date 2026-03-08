@@ -1,5 +1,14 @@
 // QSim Cluster API Client
 
+export type JobPhase =
+  | "pending"
+  | "analyzing"
+  | "scheduling"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
 export interface QSimError {
   status: number;
   message: string;
@@ -13,10 +22,18 @@ export interface JobSubmission {
 
 export interface JobStatus {
   id: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: string;
+  phase?: JobPhase;
   createdAt?: string;
   updatedAt?: string;
   error?: string;
+  assignedNode?: string;
+  assignedPool?: string;
+  qubits?: number;
+  estimatedTimeSec?: number;
+  startTime?: string;
+  completionTime?: string;
+  executionTime?: number;
 }
 
 export interface JobResult {
@@ -27,6 +44,7 @@ export interface JobResult {
     gateCount?: number;
     backend?: string;
     shots?: number;
+    complexityClass?: string;
   };
 }
 
@@ -36,6 +54,23 @@ export interface ClusterNode {
   status: string;
   qubits: number;
   load?: number;
+}
+
+/** Map raw status string to canonical JobPhase */
+export function normalizePhase(status: string): JobPhase {
+  const map: Record<string, JobPhase> = {
+    queued: "pending",
+    pending: "pending",
+    analyzing: "analyzing",
+    scheduling: "scheduling",
+    running: "running",
+    completed: "succeeded",
+    succeeded: "succeeded",
+    failed: "failed",
+    cancelled: "cancelled",
+    canceled: "cancelled",
+  };
+  return map[status.toLowerCase()] || "pending";
 }
 
 function snakeToCamel(obj: unknown): unknown {
