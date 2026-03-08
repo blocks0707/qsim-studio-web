@@ -194,13 +194,15 @@ function EditorToolbar() {
         } catch (err) {
           clearInterval(pollRef.current!);
           pollRef.current = null;
-          appendLog(`[${ts()}] ✗ ERROR: Polling failed — ${err instanceof Error ? err.message : String(err)}`);
+          const errMsg = err instanceof Error ? err.message : (typeof err === 'object' && err !== null && 'message' in err) ? String((err as {message:unknown}).message) : JSON.stringify(err);
+          appendLog(`[${ts()}] ✗ ERROR: Polling failed — ${errMsg}`);
           setJobPhase("failed");
           setRunning(false);
         }
       }, 2000);
     } catch (err) {
-      appendLog(`[${ts()}] ✗ ERROR: Failed to submit — ${err instanceof Error ? err.message : String(err)}`);
+      const errMsg = err instanceof Error ? err.message : (typeof err === 'object' && err !== null && 'message' in err) ? String((err as {message:unknown}).message) : JSON.stringify(err);
+      appendLog(`[${ts()}] ✗ ERROR: Failed to submit — ${errMsg}`);
       setJobPhase("failed");
       setRunning(false);
     }
