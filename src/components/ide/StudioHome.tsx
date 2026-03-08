@@ -108,10 +108,10 @@ export function StudioHome() {
   const openTab = useIDEStore((s) => s.openTab);
   const setFileContent = useIDEStore((s) => s.setFileContent);
 
+  const createFile = useIDEStore((s) => s.createFile);
+
   const handleNewFile = () => {
-    const id = `untitled-${Date.now()}`;
-    openTab({ id, title: "untitled.py", language: "python" });
-    setFileContent(id, "# New quantum circuit\nfrom qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2, 2)\n");
+    createFile("untitled.py");
   };
 
   return (

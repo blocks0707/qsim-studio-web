@@ -7,9 +7,31 @@ import { EditorArea } from "./EditorArea";
 import { RightPanel } from "./RightPanel";
 import { StatusBar } from "./StatusBar";
 import { useIDEStore } from "@/stores/ideStore";
+import { useEffect, useRef } from "react";
 
 export function IDELayout() {
   const sidebarOpen = useIDEStore((s) => s.sidebarOpen);
+  const loadFromStorage = useIDEStore((s) => s.loadFromStorage);
+  const initialized = useRef(false);
+
+  // Load filesystem on mount
+  useEffect(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      loadFromStorage();
+    }
+  }, [loadFromStorage]);
+
+  // Auto-save dirty files (debounced)
+  const dirtyFiles = useIDEStore((s) => s.dirtyFiles);
+  const saveFileToStorage = useIDEStore((s) => s.saveFileToStorage);
+  useEffect(() => {
+    if (dirtyFiles.size === 0) return;
+    const timer = setTimeout(() => {
+      dirtyFiles.forEach((id) => saveFileToStorage(id));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [dirtyFiles, saveFileToStorage]);
 
   return (
     <div className="h-screen w-full flex flex-col" style={{ background: "var(--bg-editor)" }}>
