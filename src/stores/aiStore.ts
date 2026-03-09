@@ -41,12 +41,15 @@ function saveAISettings(s: AISettings) {
 }
 
 function createProvider(settings: AISettings): AIProvider | null {
-  if (!settings.apiUrl || !settings.apiToken) return null;
+  // "local" mode uses server-side proxy — only needs apiToken (or env key)
+  const isLocal = settings.apiUrl === "local" || settings.apiUrl === "/api/ai/chat" || settings.apiUrl === "";
+  if (!isLocal && (!settings.apiUrl || !settings.apiToken)) return null;
   if (settings.provider === "openclaw" || settings.provider === "custom") {
     return new OpenClawProvider({
       apiUrl: settings.apiUrl,
       apiToken: settings.apiToken,
       model: settings.model || undefined,
+      provider: settings.apiUrl.includes("anthropic") ? "anthropic" : "openai",
     });
   }
   return null;
@@ -91,11 +94,11 @@ export const useAIStore = create<AIState>((set, get) => {
     togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
 
     settings: initial,
-    isConfigured: !!(initial.apiUrl && initial.apiToken),
+    isConfigured: !!(initial.apiUrl && initial.apiToken) || initial.apiUrl === "local" || initial.apiUrl === "/api/ai/chat" || initial.apiUrl === "",
     updateSettings: (partial) => {
       const next = { ...get().settings, ...partial };
       saveAISettings(next);
-      set({ settings: next, isConfigured: !!(next.apiUrl && next.apiToken) });
+      set({ settings: next, isConfigured: !!(next.apiUrl && next.apiToken) || next.apiUrl === "local" || next.apiUrl === "/api/ai/chat" || next.apiUrl === "" });
     },
 
     messages: [],

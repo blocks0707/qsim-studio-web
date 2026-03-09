@@ -47,26 +47,32 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         <MessageContent content={msg.content} streaming={msg.streaming} />
 
         {/* Code action buttons */}
-        {msg.codeBlock && !msg.streaming && (
-          <div className="flex gap-1 mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-            <button
-              onClick={() => applyCode(msg.codeBlock!)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] hover:opacity-80 transition-opacity"
-              style={{ background: "var(--accent)", color: "white" }}
-              title="Apply code to editor"
-            >
-              <Play size={10} /> 적용
-            </button>
-            <button
-              onClick={() => copyToClipboard(msg.codeBlock!)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] hover:opacity-80 transition-opacity"
-              style={{ background: "var(--bg-editor)", color: "var(--text-secondary)" }}
-              title="Copy code"
-            >
-              <Copy size={10} /> 복사
-            </button>
-          </div>
-        )}
+        {msg.codeBlock && !msg.streaming && (() => {
+          // Only show "Apply" for runnable code (has imports or circuit creation)
+          const isRunnable = /^(from |import )|QuantumCircuit\(/.test(msg.codeBlock!.trim());
+          return (
+            <div className="flex gap-1 mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+              {isRunnable && (
+                <button
+                  onClick={() => applyCode(msg.codeBlock!)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] hover:opacity-80 transition-opacity"
+                  style={{ background: "var(--accent)", color: "white" }}
+                  title="Apply code to editor"
+                >
+                  <Play size={10} /> 적용
+                </button>
+              )}
+              <button
+                onClick={() => copyToClipboard(msg.codeBlock!)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] hover:opacity-80 transition-opacity"
+                style={{ background: "var(--bg-editor)", color: "var(--text-secondary)" }}
+                title="Copy code"
+              >
+                <Copy size={10} /> 복사
+              </button>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -153,7 +159,7 @@ function AISettingsPanel({ onClose }: { onClose: () => void }) {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://api.openclaw.ai"
+            placeholder="https://api.anthropic.com"
             className="w-full px-2 py-1.5 rounded text-[12px]"
             style={{ background: "var(--bg-editor)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
           />
@@ -174,7 +180,7 @@ function AISettingsPanel({ onClose }: { onClose: () => void }) {
           <input
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="anthropic/claude-sonnet-4-20250514"
+            placeholder="claude-sonnet-4-20250514"
             className="w-full px-2 py-1.5 rounded text-[12px]"
             style={{ background: "var(--bg-editor)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
           />
@@ -226,7 +232,12 @@ export function AIPanel() {
   useEffect(() => {
     setOnApplyCode((code: string) => {
       if (!activeTabId) return;
-      // Replace entire editor content or insert
+      const currentCode = fileContents[activeTabId] || "";
+
+      // Heuristic: if code looks like a complete file (has imports or circuit creation),
+      // replace entire content. Otherwise insert at end.
+      const isCompleteFile = /^(from |import |#.*\n(?:from |import ))/.test(code.trim());
+
       if (editorRef) {
         const model = editorRef as unknown as {
           executeEdits: (source: string, edits: Array<{
@@ -234,22 +245,44 @@ export function AIPanel() {
             text: string;
           }>) => void;
         };
-        // Get current line count to select all
-        const currentCode = fileContents[activeTabId] || "";
-        const lineCount = currentCode.split("\n").length;
-        model.executeEdits("ai-assistant", [
-          {
-            range: {
-              startLineNumber: 1,
-              startColumn: 1,
-              endLineNumber: lineCount + 1,
-              endColumn: 1,
+
+        if (isCompleteFile) {
+          // Replace entire content
+          const lineCount = currentCode.split("\n").length;
+          model.executeEdits("ai-assistant", [
+            {
+              range: {
+                startLineNumber: 1,
+                startColumn: 1,
+                endLineNumber: lineCount + 1,
+                endColumn: 1,
+              },
+              text: code + "\n",
             },
-            text: code + "\n",
-          },
-        ]);
+          ]);
+        } else {
+          // Insert at end of file
+          const lines = currentCode.split("\n");
+          const lastLine = lines.length;
+          const lastCol = (lines[lastLine - 1]?.length || 0) + 1;
+          model.executeEdits("ai-assistant", [
+            {
+              range: {
+                startLineNumber: lastLine,
+                startColumn: lastCol,
+                endLineNumber: lastLine,
+                endColumn: lastCol,
+              },
+              text: "\n" + code + "\n",
+            },
+          ]);
+        }
       } else {
-        setFileContent(activeTabId, code);
+        if (isCompleteFile) {
+          setFileContent(activeTabId, code);
+        } else {
+          setFileContent(activeTabId, currentCode + "\n" + code + "\n");
+        }
       }
     });
     return () => setOnApplyCode(null);

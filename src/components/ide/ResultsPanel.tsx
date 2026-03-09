@@ -8,18 +8,37 @@ import { JobProgress } from "./JobProgress";
 import { StatusBadge } from "./StatusBadge";
 import type { JobPhase } from "@/lib/api";
 
+const chartLoading = () => (
+  <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+    Loading chart...
+  </div>
+);
+
 const HistogramChart = dynamic(() => import("./HistogramChart").then((m) => m.HistogramChart), {
   ssr: false,
-  loading: () => (
-    <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
-      Loading chart...
-    </div>
-  ),
+  loading: chartLoading,
+});
+
+const ProbabilityChart = dynamic(() => import("./ProbabilityChart").then((m) => m.ProbabilityChart), {
+  ssr: false,
+  loading: chartLoading,
+});
+
+const QSphereView = dynamic(() => import("./QSphereView").then((m) => m.QSphereView), {
+  ssr: false,
+  loading: chartLoading,
+});
+
+const StateCityView = dynamic(() => import("./StateCityView").then((m) => m.StateCityView), {
+  ssr: false,
+  loading: chartLoading,
 });
 
 const tabs: { id: ResultTab; label: string }[] = [
   { id: "histogram", label: "Histogram" },
   { id: "probability", label: "Probability" },
+  { id: "qsphere", label: "Q-Sphere" },
+  { id: "statecity", label: "State City" },
   { id: "statistics", label: "Statistics" },
   { id: "console", label: "Console" },
 ];
@@ -58,46 +77,42 @@ function ProbabilityTab() {
       </div>
     );
   }
-  const totalShots = Object.values(counts).reduce((a, b) => a + b, 0);
-  const sorted = Object.entries(counts)
-    .map(([state, count]) => ({ state, count, probability: count / totalShots }))
-    .sort((a, b) => b.probability - a.probability);
-
+  const chartKey = Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(',');
   return (
-    <div className="flex-1 overflow-y-auto p-3">
-      <table className="w-full text-xs">
-        <thead>
-          <tr style={{ color: "var(--text-secondary)" }}>
-            <th className="text-left py-1 px-2">State</th>
-            <th className="text-right py-1 px-2">Count</th>
-            <th className="text-right py-1 px-2">Probability</th>
-            <th className="py-1 px-2 w-1/3">Distribution</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((r) => (
-            <tr key={r.state} className="hover:bg-white/5">
-              <td className="py-1.5 px-2 font-mono" style={{ color: "var(--accent)" }}>
-                |{r.state}⟩
-              </td>
-              <td className="py-1.5 px-2 text-right" style={{ color: "var(--text-primary)" }}>
-                {r.count}
-              </td>
-              <td className="py-1.5 px-2 text-right" style={{ color: "var(--text-primary)" }}>
-                {(r.probability * 100).toFixed(2)}%
-              </td>
-              <td className="py-1.5 px-2">
-                <div className="h-3 rounded overflow-hidden" style={{ background: "var(--bg-sidebar)" }}>
-                  <div
-                    className="h-full rounded"
-                    style={{ width: `${r.probability * 100}%`, background: "var(--accent)" }}
-                  />
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex-1 overflow-hidden p-3">
+      <ProbabilityChart key={chartKey} counts={counts} />
+    </div>
+  );
+}
+
+function QSphereTab() {
+  const counts = useCounts();
+  if (!counts) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm">Run a simulation to see results</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-hidden p-3 flex items-center justify-center">
+      <QSphereView counts={counts} />
+    </div>
+  );
+}
+
+function StateCityTab() {
+  const counts = useCounts();
+  if (!counts) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm">Run a simulation to see results</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-hidden p-3 flex items-center justify-center">
+      <StateCityView counts={counts} />
     </div>
   );
 }
@@ -296,6 +311,8 @@ function ConsoleTab() {
 const tabComponents: Record<ResultTab, React.FC> = {
   histogram: HistogramTab,
   probability: ProbabilityTab,
+  qsphere: QSphereTab,
+  statecity: StateCityTab,
   statistics: StatisticsTab,
   console: ConsoleTab,
 };
