@@ -5,15 +5,18 @@ import { ActivityBar } from "./ActivityBar";
 import { Sidebar } from "./Sidebar";
 import { EditorArea } from "./EditorArea";
 import { RightPanel } from "./RightPanel";
+import { AIPanel } from "./AIPanel";
 import { StatusBar } from "./StatusBar";
 import { SettingsModal } from "./SettingsModal";
 import { useIDEStore, type SidebarSection } from "@/stores/ideStore";
+import { useAIStore } from "@/stores/aiStore";
 import { useEffect, useRef } from "react";
 
 const sidebarSections: SidebarSection[] = ["files", "algorithms", "jobs", "nodes", "settings"];
 
 export function IDELayout() {
   const sidebarOpen = useIDEStore((s) => s.sidebarOpen);
+  const aiPanelOpen = useAIStore((s) => s.panelOpen);
   const loadFromStorage = useIDEStore((s) => s.loadFromStorage);
   const initialized = useRef(false);
 
@@ -75,6 +78,13 @@ export function IDELayout() {
         return;
       }
 
+      // Cmd+I → toggle AI panel
+      if (e.key === "i" || e.key === "I") {
+        e.preventDefault();
+        useAIStore.getState().togglePanel();
+        return;
+      }
+
       // Cmd+W → close active tab
       if (e.key === "w" || e.key === "W") {
         e.preventDefault();
@@ -128,9 +138,18 @@ export function IDELayout() {
 
           <PanelResizeHandle />
 
-          <Panel defaultSize={sidebarOpen ? 32 : 35} minSize={20} id="right">
+          <Panel defaultSize={aiPanelOpen ? (sidebarOpen ? 27 : 30) : (sidebarOpen ? 32 : 35)} minSize={20} id="right">
             <RightPanel />
           </Panel>
+
+          {aiPanelOpen && (
+            <>
+              <PanelResizeHandle />
+              <Panel defaultSize={22} minSize={15} maxSize={40} id="ai">
+                <AIPanel />
+              </Panel>
+            </>
+          )}
         </PanelGroup>
       </div>
 
