@@ -35,6 +35,7 @@ interface EditorInstance {
 
 export interface JobResultData {
   counts: Record<string, number>;
+  statevector?: [number, number][];
   metadata?: {
     executionTime?: number;
     circuitDepth?: number;
