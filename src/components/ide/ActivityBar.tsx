@@ -1,7 +1,8 @@
 "use client";
 
-import { Files, Atom, ClipboardList, Monitor, Settings } from "lucide-react";
+import { Files, Atom, ClipboardList, Monitor, Settings, Bot } from "lucide-react";
 import { useIDEStore, SidebarSection } from "@/stores/ideStore";
+import { useAIStore } from "@/stores/aiStore";
 
 const items: { id: SidebarSection; icon: typeof Files; label: string }[] = [
   { id: "files", icon: Files, label: "Explorer" },
@@ -16,6 +17,7 @@ const bottomItems: { id: SidebarSection; icon: typeof Settings; label: string }[
 
 export function ActivityBar() {
   const { activeSidebarSection, sidebarOpen, toggleSidebar } = useIDEStore();
+  const { panelOpen: aiOpen, togglePanel: toggleAI } = useAIStore();
 
   const renderItem = (item: (typeof items)[0]) => {
     const Icon = item.icon;
@@ -54,7 +56,27 @@ export function ActivityBar() {
       }}
     >
       <div className="flex flex-col">{items.map(renderItem)}</div>
-      <div className="flex flex-col">{bottomItems.map(renderItem)}</div>
+      <div className="flex flex-col">
+        {/* AI Assistant toggle */}
+        <button
+          onClick={toggleAI}
+          className="relative w-12 h-12 flex items-center justify-center group"
+          title="AI Assistant (⌘I)"
+        >
+          {aiOpen && (
+            <div
+              className="absolute left-0 top-1 bottom-1 w-[2px]"
+              style={{ background: "var(--accent)" }}
+            />
+          )}
+          <Bot
+            size={24}
+            style={{ color: aiOpen ? "var(--accent)" : "var(--icon-inactive)" }}
+            className="group-hover:!text-white transition-colors"
+          />
+        </button>
+        {bottomItems.map(renderItem)}
+      </div>
     </div>
   );
 }
