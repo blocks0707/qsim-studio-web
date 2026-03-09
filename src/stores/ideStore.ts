@@ -12,7 +12,7 @@ import {
 } from "@/lib/filesystem";
 
 export type SidebarSection = "files" | "algorithms" | "jobs" | "nodes" | "settings";
-export type ResultTab = "histogram" | "probability" | "statistics" | "console";
+export type ResultTab = "histogram" | "probability" | "qsphere" | "statecity" | "statistics" | "console";
 
 export interface Tab {
   id: string;
