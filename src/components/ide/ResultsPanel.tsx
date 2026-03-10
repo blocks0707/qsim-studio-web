@@ -24,7 +24,7 @@ const ProbabilityChart = dynamic(() => import("./ProbabilityChart").then((m) => 
   loading: chartLoading,
 });
 
-const QSphereView = dynamic(() => import("./QSphereView").then((m) => m.QSphereView), {
+const QSphereView = dynamic(() => import("./QSphereView"), {
   ssr: false,
   loading: chartLoading,
 });
@@ -87,6 +87,8 @@ function ProbabilityTab() {
 
 function QSphereTab() {
   const counts = useCounts();
+  const jobResult = useIDEStore((s) => s.jobResult);
+  const statevector = jobResult?.statevector;
   if (!counts) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
@@ -96,7 +98,7 @@ function QSphereTab() {
   }
   return (
     <div className="flex-1 overflow-hidden p-3 flex items-center justify-center">
-      <QSphereView counts={counts} />
+      <QSphereView counts={counts} statevector={statevector} />
     </div>
   );
 }

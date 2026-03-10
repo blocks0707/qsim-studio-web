@@ -1,103 +1,183 @@
 "use client";
 
-interface Props {
+import React, { useMemo, useRef } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, Text, Line } from "@react-three/drei";
+import * as THREE from "three";
+
+interface QSphereViewProps {
   counts: Record<string, number>;
+  statevector?: [number, number][];
 }
 
 function hammingWeight(s: string): number {
-  let w = 0;
-  for (const c of s) if (c === "1") w++;
-  return w;
+  return s.split("").filter((c) => c === "1").length;
 }
 
-export function QSphereView({ counts }: Props) {
-  const totalShots = Object.values(counts).reduce((a, b) => a + b, 0);
-  const entries = Object.entries(counts).map(([state, count]) => ({
-    state,
-    probability: count / totalShots,
-    hw: hammingWeight(state),
-  }));
+function stateToSphereCoords(
+  state: string,
+  indexInLayer: number,
+  layerSize: number,
+  nQubits: number,
+): [number, number, number] {
+  const hw = hammingWeight(state);
+  const phi = Math.PI / 2 - (hw / nQubits) * Math.PI;
+  const theta = layerSize === 1 ? 0 : (indexInLayer / layerSize) * 2 * Math.PI;
+  const R = 1.8;
+  return [
+    R * Math.cos(phi) * Math.cos(theta),
+    R * Math.sin(phi),
+    R * Math.cos(phi) * Math.sin(theta),
+  ];
+}
 
-  const nQubits = entries[0]?.state.length ?? 0;
-  const maxHW = nQubits;
-
-  // SVG dimensions
-  const cx = 200, cy = 200, R = 160;
-
-  // Group by hamming weight
-  const groups: Record<number, typeof entries> = {};
-  for (const e of entries) {
-    (groups[e.hw] ??= []).push(e);
+function latitudeCircle(phi: number, segments = 64): [number, number, number][] {
+  const R = 1.8;
+  const points: [number, number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * 2 * Math.PI;
+    points.push([R * Math.cos(phi) * Math.cos(theta), R * Math.sin(phi), R * Math.cos(phi) * Math.sin(theta)]);
   }
+  return points;
+}
 
-  // Map hamming weight to latitude (0 = north pole, maxHW = south pole)
-  // y position: from top (-R) to bottom (+R)
-  const dots: { x: number; y: number; r: number; state: string; prob: number }[] = [];
-  const maxProb = Math.max(...entries.map((e) => e.probability), 0.001);
+function longitudeCircle(theta: number, segments = 64): [number, number, number][] {
+  const R = 1.8;
+  const points: [number, number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const phi = (i / segments) * 2 * Math.PI - Math.PI;
+    points.push([R * Math.cos(phi) * Math.cos(theta), R * Math.sin(phi), R * Math.cos(phi) * Math.sin(theta)]);
+  }
+  return points;
+}
 
-  for (const [hwStr, group] of Object.entries(groups)) {
-    const hw = Number(hwStr);
-    // theta: 0 (north) to PI (south)
-    const theta = maxHW > 0 ? (hw / maxHW) * Math.PI : Math.PI / 2;
-    const latY = -Math.cos(theta) * R;
-    const latR = Math.sin(theta) * R; // radius of latitude circle
+function RotatingGroup({ children }: { children: React.ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (ref.current) ref.current.rotation.y += delta * 0.15;
+  });
+  return <group ref={ref}>{children}</group>;
+}
 
-    group.sort((a, b) => a.state.localeCompare(b.state));
-    const n = group.length;
+function phaseColor(phase: number): string {
+  const hue = ((phase / (2 * Math.PI)) * 360 + 360) % 360;
+  return `hsl(${hue}, 80%, 55%)`;
+}
 
-    for (let i = 0; i < n; i++) {
-      const phi = n > 1 ? (i / n) * 2 * Math.PI : 0;
-      const x = cx + (latR > 0 ? Math.cos(phi) * latR : 0);
-      const y = cy + latY + (latR > 0 ? Math.sin(phi) * latR * 0.3 : 0); // 0.3 for perspective squish
-      const dotR = 4 + (group[i].probability / maxProb) * 16;
-      dots.push({ x, y, r: dotR, state: group[i].state, prob: group[i].probability });
+function probColor(prob: number, maxProb: number): string {
+  const t = maxProb > 0 ? prob / maxProb : 0;
+  const r = Math.round(100 + t * 155);
+  const g = Math.round(180 - t * 60);
+  const b = Math.round(100 - t * 60);
+  return `rgb(${r},${g},${b})`;
+}
+
+export default function QSphereView({ counts, statevector }: QSphereViewProps) {
+  const data = useMemo(() => {
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (total === 0) return { states: [], nQubits: 0, maxProb: 0, hasStatevector: false };
+
+    const nQubits = Object.keys(counts)[0]?.length || 0;
+    const hasStatevector = !!statevector && statevector.length === (1 << nQubits);
+
+    const layers: Map<number, { state: string; prob: number; phase: number }[]> = new Map();
+    for (const [state, count] of Object.entries(counts)) {
+      const hw = hammingWeight(state);
+      if (!layers.has(hw)) layers.set(hw, []);
+
+      let phase = 0;
+      if (hasStatevector) {
+        const idx = parseInt(state, 2);
+        const [re, im] = statevector![idx];
+        phase = Math.atan2(im, re);
+      }
+
+      layers.get(hw)!.push({ state, prob: count / total, phase });
     }
+
+    const maxProb = Math.max(...Object.values(counts).map((c) => c / total));
+
+    const states: { state: string; prob: number; phase: number; pos: [number, number, number] }[] = [];
+    for (const [, items] of layers) {
+      items.sort((a, b) => a.state.localeCompare(b.state));
+      items.forEach((item, idx) => {
+        const pos = stateToSphereCoords(item.state, idx, items.length, nQubits);
+        states.push({ ...item, pos });
+      });
+    }
+
+    return { states, nQubits, maxProb, hasStatevector };
+  }, [counts, statevector]);
+
+  if (data.states.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full" style={{ color: "var(--text-secondary)" }}>
+        Run a simulation to see Q-Sphere
+      </div>
+    );
   }
 
-  // Color based on probability
-  const probColor = (p: number) => {
-    const t = p / maxProb;
-    const r = Math.round(78 + t * (255 - 78));
-    const g = Math.round(201 - t * 80);
-    const b = Math.round(176 + t * (80 - 176));
-    return `rgb(${r},${g},${b})`;
-  };
+  const latCircles = useMemo(() => {
+    const circles: [number, number, number][][] = [];
+    for (let hw = 0; hw <= data.nQubits; hw++) {
+      const phi = Math.PI / 2 - (hw / data.nQubits) * Math.PI;
+      circles.push(latitudeCircle(phi));
+    }
+    return circles;
+  }, [data.nQubits]);
 
   return (
-    <svg viewBox="0 0 400 400" width="100%" height="100%" style={{ maxHeight: "100%" }}>
-      {/* Sphere outline */}
-      <ellipse cx={cx} cy={cy} rx={R} ry={R} fill="none" stroke="var(--border, #444)" strokeWidth={1} opacity={0.5} />
-      {/* Latitude lines */}
-      {Array.from({ length: maxHW + 1 }, (_, hw) => {
-        const theta = maxHW > 0 ? (hw / maxHW) * Math.PI : Math.PI / 2;
-        const latY = cy - Math.cos(theta) * R;
-        const latR = Math.sin(theta) * R;
-        return latR > 2 ? (
-          <ellipse key={hw} cx={cx} cy={latY} rx={latR} ry={latR * 0.3} fill="none" stroke="var(--border, #444)" strokeWidth={0.5} opacity={0.3} strokeDasharray="4 4" />
-        ) : null;
-      })}
-      {/* Vertical axis */}
-      <line x1={cx} y1={cy - R} x2={cx} y2={cy + R} stroke="var(--border, #444)" strokeWidth={0.5} opacity={0.3} />
-      {/* Dots */}
-      {dots.map((d) => (
-        <g key={d.state}>
-          <circle cx={d.x} cy={d.y} r={d.r} fill={probColor(d.prob)} opacity={0.85} stroke="var(--text-primary, #fff)" strokeWidth={0.5}>
-            <title>|{d.state}⟩ — {(d.prob * 100).toFixed(2)}%</title>
-          </circle>
-          {d.r > 8 && (
-            <text x={d.x} y={d.y + d.r + 12} textAnchor="middle" fill="var(--text-secondary, #999)" fontSize={9} fontFamily="monospace">
-              |{d.state}⟩
-            </text>
-          )}
-        </g>
-      ))}
-      {/* Pole labels */}
-      <text x={cx} y={cy - R - 8} textAnchor="middle" fill="var(--text-secondary, #999)" fontSize={10} fontFamily="monospace">
-        |{"0".repeat(nQubits)}⟩
-      </text>
-      <text x={cx} y={cy + R + 16} textAnchor="middle" fill="var(--text-secondary, #999)" fontSize={10} fontFamily="monospace">
-        |{"1".repeat(nQubits)}⟩
-      </text>
-    </svg>
+    <div className="w-full h-full" style={{ minHeight: 300 }}>
+      <Canvas camera={{ position: [3, 2, 3], fov: 50 }}>
+        <ambientLight intensity={0.6} />
+        <pointLight position={[5, 5, 5]} intensity={0.8} />
+        <pointLight position={[-5, -3, -5]} intensity={0.3} />
+
+        <RotatingGroup>
+          {/* Wireframe sphere */}
+          <mesh>
+            <sphereGeometry args={[1.8, 32, 32]} />
+            <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.06} />
+          </mesh>
+
+          {/* Latitude circles */}
+          {latCircles.map((points, i) => (
+            <Line key={`lat-${i}`} points={points} color="#666666" lineWidth={0.5} transparent opacity={0.3} dashed dashSize={0.1} gapSize={0.05} />
+          ))}
+
+          {/* Longitude lines */}
+          {[0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4].map((theta, i) => (
+            <Line key={`lon-${i}`} points={longitudeCircle(theta)} color="#666666" lineWidth={0.5} transparent opacity={0.2} dashed dashSize={0.1} gapSize={0.05} />
+          ))}
+
+          {/* Axis */}
+          <Line points={[[0, -2.1, 0], [0, 2.1, 0]]} color="#888888" lineWidth={1} transparent opacity={0.3} />
+          <Text position={[0, 2.3, 0]} fontSize={0.15} color="#aaaaaa">|0⟩</Text>
+          <Text position={[0, -2.3, 0]} fontSize={0.15} color="#aaaaaa">|1⟩</Text>
+
+          {/* State points */}
+          {data.states.map(({ state, prob, phase, pos }) => {
+            const radius = 0.08 + prob * 0.35;
+            const color = data.hasStatevector ? phaseColor(phase) : probColor(prob, data.maxProb);
+            return (
+              <group key={state} position={pos}>
+                <mesh>
+                  <sphereGeometry args={[radius, 16, 16]} />
+                  <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} transparent opacity={0.9} />
+                </mesh>
+                <Text position={[0, -(radius + 0.12), 0]} fontSize={0.1} color="#cccccc" anchorX="center" anchorY="top">
+                  |{state}⟩
+                </Text>
+                <Text position={[0, radius + 0.08, 0]} fontSize={0.08} color="#999999" anchorX="center" anchorY="bottom">
+                  {(prob * 100).toFixed(1)}%
+                </Text>
+              </group>
+            );
+          })}
+        </RotatingGroup>
+
+        <OrbitControls enablePan={false} minDistance={3} maxDistance={8} />
+      </Canvas>
+    </div>
   );
 }
