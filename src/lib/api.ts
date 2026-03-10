@@ -38,6 +38,7 @@ export interface JobStatus {
 
 export interface JobResult {
   counts: Record<string, number>;
+  statevector?: [number, number][];
   metadata?: {
     executionTime?: number;
     circuitDepth?: number;
@@ -164,15 +165,18 @@ export interface CircuitAnalysisResult {
 
 export function extractResult(data: unknown): JobResult {
   const d = data as Record<string, unknown>;
+  const sv = (d.statevector as [number, number][] | undefined) ?? undefined;
   if (d.result && typeof d.result === "object") {
     const r = d.result as Record<string, unknown>;
     return {
       counts: (r.counts as Record<string, number>) || {},
+      statevector: sv,
       metadata: r.metadata as JobResult["metadata"],
     };
   }
   return {
     counts: (d.counts as Record<string, number>) || {},
+    statevector: sv,
     metadata: d.metadata as JobResult["metadata"],
   };
 }
