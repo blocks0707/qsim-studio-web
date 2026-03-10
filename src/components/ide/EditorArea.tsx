@@ -183,7 +183,20 @@ function EditorToolbar() {
             pollRef.current = null;
             const rawResult = await client.getJobResult(id);
             const result = extractResult(rawResult);
-            setJobResult(result);
+            // Enrich result metadata from job status
+            const enriched = {
+              ...result,
+              metadata: {
+                ...result.metadata,
+                executionTime: status.executionTime ? Number(status.executionTime) / 1000 : result.metadata?.executionTime,
+                circuitDepth: (status.complexity as Record<string, unknown>)?.depth as number ?? result.metadata?.circuitDepth,
+                gateCount: (status.complexity as Record<string, unknown>)?.gateCount as number ?? result.metadata?.gateCount,
+                backend: status.assignedNode || result.metadata?.backend,
+                complexityClass: (status.complexity as Record<string, unknown>)?.class as string ?? result.metadata?.complexityClass,
+                shots: state.shots,
+              },
+            };
+            setJobResult(enriched);
             setRunning(false);
             setActiveResultTab("histogram");
           } else if (phase === "failed" || phase === "cancelled") {

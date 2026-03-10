@@ -10,12 +10,10 @@ interface QSphereViewProps {
   statevector?: [number, number][];
 }
 
-/** Calculate hamming weight of a binary string */
 function hammingWeight(s: string): number {
   return s.split("").filter((c) => c === "1").length;
 }
 
-/** Map states onto sphere surface based on hamming weight */
 function stateToSphereCoords(
   state: string,
   indexInLayer: number,
@@ -24,48 +22,35 @@ function stateToSphereCoords(
 ): [number, number, number] {
   const hw = hammingWeight(state);
   const phi = Math.PI / 2 - (hw / nQubits) * Math.PI;
-  const theta = layerSize === 1
-    ? 0
-    : (indexInLayer / layerSize) * 2 * Math.PI;
-
+  const theta = layerSize === 1 ? 0 : (indexInLayer / layerSize) * 2 * Math.PI;
   const R = 1.8;
-  const x = R * Math.cos(phi) * Math.cos(theta);
-  const y = R * Math.sin(phi);
-  const z = R * Math.cos(phi) * Math.sin(theta);
-  return [x, y, z];
+  return [
+    R * Math.cos(phi) * Math.cos(theta),
+    R * Math.sin(phi),
+    R * Math.cos(phi) * Math.sin(theta),
+  ];
 }
 
-/** Generate latitude circle points */
 function latitudeCircle(phi: number, segments = 64): [number, number, number][] {
   const R = 1.8;
   const points: [number, number, number][] = [];
   for (let i = 0; i <= segments; i++) {
     const theta = (i / segments) * 2 * Math.PI;
-    points.push([
-      R * Math.cos(phi) * Math.cos(theta),
-      R * Math.sin(phi),
-      R * Math.cos(phi) * Math.sin(theta),
-    ]);
+    points.push([R * Math.cos(phi) * Math.cos(theta), R * Math.sin(phi), R * Math.cos(phi) * Math.sin(theta)]);
   }
   return points;
 }
 
-/** Generate longitude circle points */
 function longitudeCircle(theta: number, segments = 64): [number, number, number][] {
   const R = 1.8;
   const points: [number, number, number][] = [];
   for (let i = 0; i <= segments; i++) {
     const phi = (i / segments) * 2 * Math.PI - Math.PI;
-    points.push([
-      R * Math.cos(phi) * Math.cos(theta),
-      R * Math.sin(phi),
-      R * Math.cos(phi) * Math.sin(theta),
-    ]);
+    points.push([R * Math.cos(phi) * Math.cos(theta), R * Math.sin(phi), R * Math.cos(phi) * Math.sin(theta)]);
   }
   return points;
 }
 
-/** Slowly rotating group */
 function RotatingGroup({ children }: { children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
@@ -74,13 +59,11 @@ function RotatingGroup({ children }: { children: React.ReactNode }) {
   return <group ref={ref}>{children}</group>;
 }
 
-/** HSL-based color from phase angle (0..2π) → hue */
 function phaseColor(phase: number): string {
   const hue = ((phase / (2 * Math.PI)) * 360 + 360) % 360;
-  return `hsl(${hue}, 85%, 55%)`;
+  return `hsl(${hue}, 80%, 55%)`;
 }
 
-/** Color interpolation from green (low prob) to orange (high prob) — fallback */
 function probColor(prob: number, maxProb: number): string {
   const t = maxProb > 0 ? prob / maxProb : 0;
   const r = Math.round(100 + t * 155);
@@ -97,27 +80,24 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
     const nQubits = Object.keys(counts)[0]?.length || 0;
     const hasStatevector = !!statevector && statevector.length === (1 << nQubits);
 
-    // Group by hamming weight
-    const layers: Map<number, { state: string; prob: number; phase: number; amplitude: number }[]> = new Map();
+    const layers: Map<number, { state: string; prob: number; phase: number }[]> = new Map();
     for (const [state, count] of Object.entries(counts)) {
       const hw = hammingWeight(state);
       if (!layers.has(hw)) layers.set(hw, []);
 
       let phase = 0;
-      let amplitude = count / total;
       if (hasStatevector) {
         const idx = parseInt(state, 2);
         const [re, im] = statevector![idx];
         phase = Math.atan2(im, re);
-        amplitude = Math.sqrt(re * re + im * im);
       }
 
-      layers.get(hw)!.push({ state, prob: count / total, phase, amplitude });
+      layers.get(hw)!.push({ state, prob: count / total, phase });
     }
 
     const maxProb = Math.max(...Object.values(counts).map((c) => c / total));
 
-    const states: { state: string; prob: number; phase: number; amplitude: number; pos: [number, number, number] }[] = [];
+    const states: { state: string; prob: number; phase: number; pos: [number, number, number] }[] = [];
     for (const [, items] of layers) {
       items.sort((a, b) => a.state.localeCompare(b.state));
       items.forEach((item, idx) => {
@@ -137,7 +117,6 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
     );
   }
 
-  // Latitude circles for each hamming weight level
   const latCircles = useMemo(() => {
     const circles: [number, number, number][][] = [];
     for (let hw = 0; hw <= data.nQubits; hw++) {
@@ -158,113 +137,46 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
           {/* Wireframe sphere */}
           <mesh>
             <sphereGeometry args={[1.8, 32, 32]} />
-            <meshBasicMaterial
-              color="#ffffff"
-              wireframe
-              transparent
-              opacity={0.06}
-            />
+            <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.06} />
           </mesh>
 
           {/* Latitude circles */}
           {latCircles.map((points, i) => (
-            <Line
-              key={`lat-${i}`}
-              points={points}
-              color="#666666"
-              lineWidth={0.5}
-              transparent
-              opacity={0.3}
-              dashed
-              dashSize={0.1}
-              gapSize={0.05}
-            />
+            <Line key={`lat-${i}`} points={points} color="#666666" lineWidth={0.5} transparent opacity={0.3} dashed dashSize={0.1} gapSize={0.05} />
           ))}
 
           {/* Longitude lines */}
           {[0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4].map((theta, i) => (
-            <Line
-              key={`lon-${i}`}
-              points={longitudeCircle(theta)}
-              color="#666666"
-              lineWidth={0.5}
-              transparent
-              opacity={0.2}
-              dashed
-              dashSize={0.1}
-              gapSize={0.05}
-            />
+            <Line key={`lon-${i}`} points={longitudeCircle(theta)} color="#666666" lineWidth={0.5} transparent opacity={0.2} dashed dashSize={0.1} gapSize={0.05} />
           ))}
 
-          {/* Axis line (north-south) */}
-          <Line
-            points={[[0, -2.1, 0], [0, 2.1, 0]]}
-            color="#888888"
-            lineWidth={1}
-            transparent
-            opacity={0.3}
-          />
-
-          {/* Axis labels */}
-          <Text position={[0, 2.3, 0]} fontSize={0.15} color="#aaaaaa">
-            |0⟩
-          </Text>
-          <Text position={[0, -2.3, 0]} fontSize={0.15} color="#aaaaaa">
-            |1⟩
-          </Text>
+          {/* Axis */}
+          <Line points={[[0, -2.1, 0], [0, 2.1, 0]]} color="#888888" lineWidth={1} transparent opacity={0.3} />
+          <Text position={[0, 2.3, 0]} fontSize={0.15} color="#aaaaaa">|0⟩</Text>
+          <Text position={[0, -2.3, 0]} fontSize={0.15} color="#aaaaaa">|1⟩</Text>
 
           {/* State points */}
-          {data.states.map(({ state, prob, phase, amplitude, pos }) => {
+          {data.states.map(({ state, prob, phase, pos }) => {
             const radius = 0.08 + prob * 0.35;
-            // Use phase-based color when statevector is available, otherwise fallback to probability color
-            const color = data.hasStatevector
-              ? phaseColor(phase)
-              : probColor(prob, data.maxProb);
+            const color = data.hasStatevector ? phaseColor(phase) : probColor(prob, data.maxProb);
             return (
               <group key={state} position={pos}>
-                {/* Glowing sphere */}
                 <mesh>
                   <sphereGeometry args={[radius, 16, 16]} />
-                  <meshStandardMaterial
-                    color={color}
-                    emissive={color}
-                    emissiveIntensity={0.4}
-                    transparent
-                    opacity={0.9}
-                  />
+                  <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} transparent opacity={0.9} />
                 </mesh>
-                {/* Label */}
-                <Text
-                  position={[0, -(radius + 0.12), 0]}
-                  fontSize={0.1}
-                  color="#cccccc"
-                  anchorX="center"
-                  anchorY="top"
-                >
+                <Text position={[0, -(radius + 0.12), 0]} fontSize={0.1} color="#cccccc" anchorX="center" anchorY="top">
                   |{state}⟩
                 </Text>
-                <Text
-                  position={[0, radius + 0.08, 0]}
-                  fontSize={0.08}
-                  color="#999999"
-                  anchorX="center"
-                  anchorY="bottom"
-                >
-                  {data.hasStatevector
-                    ? `${(amplitude * 100).toFixed(1)}% ∠${((phase * 180) / Math.PI).toFixed(0)}°`
-                    : `${(prob * 100).toFixed(1)}%`}
+                <Text position={[0, radius + 0.08, 0]} fontSize={0.08} color="#999999" anchorX="center" anchorY="bottom">
+                  {(prob * 100).toFixed(1)}%
                 </Text>
               </group>
             );
           })}
         </RotatingGroup>
 
-        <OrbitControls
-          enablePan={false}
-          minDistance={3}
-          maxDistance={8}
-          autoRotate={false}
-        />
+        <OrbitControls enablePan={false} minDistance={3} maxDistance={8} />
       </Canvas>
     </div>
   );
