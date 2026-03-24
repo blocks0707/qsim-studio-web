@@ -135,6 +135,8 @@ interface IDEState {
   files: FSNode[];
   dirtyFiles: Set<string>;
   expandedFolders: Set<string>;
+  fileSortMode: "name" | "type" | "modified";
+  setFileSortMode: (mode: "name" | "type" | "modified") => void;
   toggleFolder: (folderId: string) => void;
   createFile: (name: string, content?: string, parentId?: string | null) => string;
   createFolder: (name: string, parentId?: string | null) => string;
@@ -311,6 +313,8 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   files: [],
   dirtyFiles: new Set<string>(),
   expandedFolders: new Set<string>(),
+  fileSortMode: "name",
+  setFileSortMode: (mode) => set({ fileSortMode: mode }),
 
   toggleFolder: (folderId) => {
     set((s) => {

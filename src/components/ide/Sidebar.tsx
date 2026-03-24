@@ -25,6 +25,25 @@ import {
 } from "lucide-react";
 import { normalizePhase, createClient, type JobPhase } from "@/lib/api";
 import { getChildren, loadFileContent, type FSNode } from "@/lib/filesystem";
+
+function sortedChildren(nodes: FSNode[], parentId: string | null, mode: "name" | "type" | "modified"): FSNode[] {
+  const children = getChildren(nodes, parentId); // already folders-first + name sorted
+  if (mode === "name") return children;
+  if (mode === "type") {
+    // Group by extension within files (folders already first from getChildren)
+    const folders = children.filter((n) => n.type === "folder");
+    const files = children.filter((n) => n.type === "file");
+    files.sort((a, b) => {
+      const extA = a.name.includes(".") ? a.name.slice(a.name.lastIndexOf(".")) : "";
+      const extB = b.name.includes(".") ? b.name.slice(b.name.lastIndexOf(".")) : "";
+      if (extA !== extB) return extA.localeCompare(extB);
+      return a.name.localeCompare(b.name);
+    });
+    return [...folders, ...files];
+  }
+  // "modified" — no real timestamps in localStorage, fall back to name
+  return children;
+}
 import { StatusBadge } from "./StatusBadge";
 import { JobStepper } from "./JobStepper";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -114,7 +133,8 @@ function TreeNode({
   const isExpanded = expandedFolders.has(node.id);
   const isActive = node.id === activeTabId;
   const isDirty = dirtyFiles.has(node.id);
-  const children = isFolder ? getChildren(allFiles, node.id) : [];
+  const sortMode = useIDEStore((s) => s.fileSortMode);
+  const children = isFolder ? sortedChildren(allFiles, node.id, sortMode) : [];
   const paddingLeft = 8 + depth * 16;
 
   // Renaming
@@ -245,7 +265,9 @@ function FilesPanel() {
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   };
 
-  const rootNodes = getChildren(files, null);
+  const sortMode = useIDEStore((s) => s.fileSortMode);
+  const setSortMode = useIDEStore((s) => s.setFileSortMode);
+  const rootNodes = sortedChildren(files, null, sortMode);
 
   return (
     <div className="text-sm">
@@ -287,6 +309,22 @@ function FilesPanel() {
             className="hidden"
             onChange={handleImport}
           />
+          {/* Sort selector */}
+          <select
+            className="text-[10px] rounded px-1 py-0 cursor-pointer"
+            style={{
+              background: "transparent",
+              color: "var(--text-secondary)",
+              border: "none",
+              outline: "none",
+            }}
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as "name" | "type")}
+            title="Sort files"
+          >
+            <option value="name">A-Z</option>
+            <option value="type">Type</option>
+          </select>
         </div>
       </div>
 
