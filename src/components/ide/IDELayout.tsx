@@ -8,6 +8,7 @@ import { RightPanel } from "./RightPanel";
 import { AIPanel } from "./AIPanel";
 import { StatusBar } from "./StatusBar";
 import { SettingsModal } from "./SettingsModal";
+import { QuickOpen } from "./QuickOpen";
 import { useIDEStore, type SidebarSection } from "@/stores/ideStore";
 import { useAIStore } from "@/stores/aiStore";
 import { useEffect, useRef } from "react";
@@ -155,6 +156,7 @@ export function IDELayout() {
 
       <StatusBar />
       <SettingsModal />
+      <QuickOpen />
     </div>
   );
 }
