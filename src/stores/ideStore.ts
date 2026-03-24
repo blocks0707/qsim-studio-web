@@ -1,6 +1,36 @@
 import { create } from "zustand";
 import { getAlgorithm } from "@/lib/algorithms";
 import type { JobPhase } from "@/lib/api";
+import { pushFile, deleteRemoteFile, moveRemoteFile, getActiveProjectId } from "@/lib/project-sync";
+
+/** Background sync helpers — fire and forget, no UI blocking */
+function getApiConfig(): { apiUrl: string; apiToken: string; projectId: string } | null {
+  if (typeof window === "undefined") return null;
+  const apiUrl = localStorage.getItem("qsim-settings:apiUrl") || "";
+  const apiToken = localStorage.getItem("qsim-settings:apiToken") || "";
+  const projectId = getActiveProjectId();
+  if (!apiUrl || !apiToken || !projectId) return null;
+  return { apiUrl, apiToken, projectId };
+}
+
+function syncFileToRemote(path: string, content: string) {
+  const cfg = getApiConfig();
+  if (!cfg) return;
+  pushFile(cfg.apiUrl, cfg.apiToken, cfg.projectId, path, content).catch(() => {});
+}
+
+function syncDeleteRemote(path: string) {
+  const cfg = getApiConfig();
+  if (!cfg) return;
+  deleteRemoteFile(cfg.apiUrl, cfg.apiToken, cfg.projectId, path).catch(() => {});
+}
+
+function syncMoveRemote(oldPath: string, newPath: string) {
+  const cfg = getApiConfig();
+  if (!cfg) return;
+  moveRemoteFile(cfg.apiUrl, cfg.apiToken, cfg.projectId, oldPath, newPath).catch(() => {});
+}
+
 import {
   loadFileTree,
   saveFileTree,
@@ -344,6 +374,7 @@ export const useIDEStore = create<IDEState>((set, get) => ({
     });
 
     get().openFileInEditor(file);
+    syncFileToRemote(file.path, defaultContent);
     return file.id;
   },
 
@@ -382,6 +413,14 @@ export const useIDEStore = create<IDEState>((set, get) => ({
       for (const d of getDescendants(s.files, id)) {
         idsToRemove.add(d.id);
       }
+    }
+
+    // Sync delete to remote for files
+    const filesToDelete = node?.type === "folder"
+      ? s.files.filter((f) => idsToRemove.has(f.id) && f.type === "file")
+      : node ? [node] : [];
+    for (const f of filesToDelete) {
+      syncDeleteRemote(f.path);
     }
 
     deleteNode(id);
@@ -452,6 +491,8 @@ export const useIDEStore = create<IDEState>((set, get) => ({
         dirty.delete(fileId);
         return { dirtyFiles: dirty };
       });
+      // Background sync to remote
+      syncFileToRemote(file.path, content);
     }
   },
 
