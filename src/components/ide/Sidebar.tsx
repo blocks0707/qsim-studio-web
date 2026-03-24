@@ -53,6 +53,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 function FileIcon({ name }: { name: string }) {
   if (name.endsWith(".qasm")) return <FileCode size={14} className="text-[#e37933] flex-shrink-0" />;
   if (name.endsWith(".py")) return <FileCode size={14} className="text-[#519aba] flex-shrink-0" />;
+  if (name.endsWith(".ipynb")) return <FileCode size={14} className="text-[#e37933] flex-shrink-0" />;
   if (name.endsWith(".json")) return <FileText size={14} className="text-[#cbcb41] flex-shrink-0" />;
   if (name.endsWith(".md")) return <FileText size={14} className="text-[#519aba] flex-shrink-0" />;
   if (name.endsWith(".txt")) return <FileText size={14} className="text-[#a0a0a0] flex-shrink-0" />;
@@ -358,7 +359,7 @@ function FilesPanel() {
             ref={importRef}
             type="file"
             multiple
-            accept=".py,.qasm,.json,.txt,.md"
+            accept=".py,.qasm,.json,.txt,.md,.ipynb"
             className="hidden"
             onChange={handleImport}
           />

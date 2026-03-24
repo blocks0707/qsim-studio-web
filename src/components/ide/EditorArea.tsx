@@ -8,7 +8,13 @@ import { SuggestionOverlay } from "./SuggestionOverlay";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
 import { createClient, extractResult, normalizePhase } from "@/lib/api";
 import type { JobPhase } from "@/lib/api";
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { parseNotebook, serializeNotebook, type Notebook, type CellOutput } from "@/lib/notebook";
+
+const NotebookEditorDynamic = dynamic(
+  () => import("./NotebookEditor").then((m) => ({ default: m.NotebookEditor })),
+  { ssr: false, loading: () => <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>Loading notebook...</div> }
+);
 
 const MonacoEditor = dynamic(
   () => import("./MonacoEditor").then((m) => ({ default: m.MonacoEditor })),
@@ -316,20 +322,72 @@ function EditorToolbar() {
   );
 }
 
+function NotebookView({ tabId }: { tabId: string }) {
+  const fileContents = useIDEStore((s) => s.fileContents);
+  const setFileContent = useIDEStore((s) => s.setFileContent);
+  const content = fileContents[tabId] || "";
+
+  const notebook = useMemo<Notebook | null>(() => {
+    try {
+      return parseNotebook(content || '{"nbformat":4,"nbformat_minor":5,"metadata":{},"cells":[]}');
+    } catch {
+      return null;
+    }
+  }, [content]);
+
+  const handleChange = useCallback((nb: Notebook) => {
+    const json = serializeNotebook(nb);
+    setFileContent(tabId, json); // setFileContent auto-marks dirty
+  }, [tabId, setFileContent]);
+
+  const handleExecuteCell = useCallback(async (_cellId: string, code: string): Promise<CellOutput[]> => {
+    // TODO: Connect to JupyterRuntime kernel for real execution
+    // For now, return a placeholder
+    return [{
+      output_type: "stream" as const,
+      name: "stdout" as const,
+      text: ["⚠️ Jupyter kernel not connected. Configure a JupyterRuntime session to execute cells.\n"],
+    }];
+  }, []);
+
+  if (!notebook) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+        <p className="text-sm">Failed to parse notebook file</p>
+      </div>
+    );
+  }
+
+  return (
+    <NotebookEditorDynamic
+      notebook={notebook}
+      onChange={handleChange}
+      onExecuteCell={handleExecuteCell}
+    />
+  );
+}
+
 export function EditorArea() {
   const activeTabId = useIDEStore((s) => s.activeTabId);
+  const openTabs = useIDEStore((s) => s.openTabs);
+  const currentTab = openTabs.find((t) => t.id === activeTabId);
+  const isNotebook = currentTab?.title.endsWith(".ipynb") ?? false;
 
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--bg-editor)" }}>
       <TabBar />
       {activeTabId ? (
-        <>
-          <EditorToolbar />
-          <div className="flex-1 overflow-hidden relative">
-            <SuggestionOverlay />
-            <MonacoEditor />
-          </div>
-        </>
+        isNotebook ? (
+          <NotebookView tabId={activeTabId} />
+        ) : (
+          <>
+            <EditorToolbar />
+            <div className="flex-1 overflow-hidden relative">
+              <SuggestionOverlay />
+              <MonacoEditor />
+            </div>
+          </>
+        )
       ) : (
         <StudioHome />
       )}
