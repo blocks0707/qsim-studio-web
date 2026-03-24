@@ -1,9 +1,27 @@
+export type AlgorithmCategory = "entanglement" | "search" | "transform" | "optimization" | "cryptography" | "error-correction";
+
+export const CATEGORIES: { id: AlgorithmCategory; label: string }[] = [
+  { id: "entanglement", label: "Entanglement" },
+  { id: "search", label: "Search & Oracle" },
+  { id: "transform", label: "Transform" },
+  { id: "optimization", label: "Optimization" },
+  { id: "cryptography", label: "Cryptography" },
+  { id: "error-correction", label: "Error Correction" },
+];
+
+export type ComplexityLevel = "beginner" | "intermediate" | "advanced";
+
 export interface Algorithm {
   id: string;
   name: string;
   emoji: string;
   description: string;
+  longDescription: string;
+  category: AlgorithmCategory;
+  complexity: ComplexityLevel;
   qubits: number;
+  gates: string[];
+  references?: string[];
   code: string;
 }
 
@@ -13,6 +31,11 @@ export const algorithms: Algorithm[] = [
     name: "Bell State",
     emoji: "🔔",
     description: "Two-qubit entanglement",
+    longDescription: "The Bell State is the simplest example of quantum entanglement. It creates a maximally entangled pair of qubits in the state |Φ+⟩ = (|00⟩ + |11⟩)/√2. When measured, both qubits always yield the same result — either both |0⟩ or both |1⟩ — regardless of the distance between them. Bell states form the foundation for quantum teleportation, superdense coding, and quantum key distribution protocols.",
+    category: "entanglement",
+    complexity: "beginner",
+    gates: ["H", "CNOT"],
+    references: ["https://en.wikipedia.org/wiki/Bell_state"],
     qubits: 2,
     code: `# Bell State - 벨 상태 생성
 # Creates maximally entangled two-qubit state |Φ+⟩ = (|00⟩ + |11⟩)/√2
@@ -42,6 +65,11 @@ print(qc.draw())
     name: "GHZ State",
     emoji: "👻",
     description: "Multi-qubit entanglement",
+    longDescription: "The GHZ (Greenberger–Horne–Zeilinger) state generalizes Bell states to n qubits, creating the superposition (|00...0⟩ + |11...1⟩)/√2. It demonstrates genuine multipartite entanglement — a property that cannot be reduced to pairwise entanglement. GHZ states are used in quantum error correction, secret sharing protocols, and tests of local hidden variable theories.",
+    category: "entanglement",
+    complexity: "beginner",
+    gates: ["H", "CNOT"],
+    references: ["https://en.wikipedia.org/wiki/Greenberger%E2%80%93Horne%E2%80%93Zeilinger_state"],
     qubits: 5,
     code: `# GHZ State - GHZ 상태 (Greenberger–Horne–Zeilinger)
 # Creates n-qubit entangled state (|000...0⟩ + |111...1⟩)/√2
@@ -74,6 +102,11 @@ print(qc.draw())
     name: "QFT",
     emoji: "📊",
     description: "Quantum Fourier Transform",
+    longDescription: "The Quantum Fourier Transform (QFT) is the quantum analogue of the classical discrete Fourier transform. It maps computational basis states to their frequency-domain representation using O(n²) gates — an exponential speedup over the classical FFT's O(n·2ⁿ). QFT is a critical subroutine in Shor's factoring algorithm, quantum phase estimation, and many quantum machine learning algorithms.",
+    category: "transform",
+    complexity: "intermediate",
+    gates: ["H", "CP", "SWAP"],
+    references: ["https://en.wikipedia.org/wiki/Quantum_Fourier_transform"],
     qubits: 4,
     code: `# QFT - 양자 푸리에 변환
 # Quantum Fourier Transform: basis for many quantum algorithms
@@ -119,6 +152,11 @@ print("QFT results:", result.get_counts())
     name: "Grover",
     emoji: "🔍",
     description: "Quantum search algorithm",
+    longDescription: "Grover's algorithm provides a quadratic speedup for unstructured search problems: finding a marked item in N unsorted elements requires only O(√N) queries instead of O(N). It uses amplitude amplification — repeatedly applying an oracle and a diffusion operator to boost the probability of the target state. Applications include database search, SAT solving, and cryptographic key search.",
+    category: "search",
+    complexity: "intermediate",
+    gates: ["H", "X", "MCX", "Z"],
+    references: ["https://en.wikipedia.org/wiki/Grover%27s_algorithm"],
     qubits: 3,
     code: `# Grover's Algorithm - 그로버 탐색 알고리즘
 # Quadratic speedup for unstructured search
@@ -178,6 +216,11 @@ print(f"Grover search for |{format(target, f'0{n}b')}⟩:", result.get_counts())
     name: "VQE",
     emoji: "⚡",
     description: "Variational Quantum Eigensolver",
+    longDescription: "VQE is a hybrid quantum-classical algorithm for finding the ground state energy of molecular Hamiltonians. It uses a parameterized quantum circuit (ansatz) whose parameters are optimized classically to minimize the expectation value of the Hamiltonian. VQE is designed for near-term noisy quantum devices (NISQ era) and has applications in quantum chemistry, materials science, and drug discovery.",
+    category: "optimization",
+    complexity: "advanced",
+    gates: ["RY", "CNOT", "RZ"],
+    references: ["https://en.wikipedia.org/wiki/Variational_quantum_eigensolver"],
     qubits: 2,
     code: `# VQE - 변분 양자 고유값 솔버
 # Variational Quantum Eigensolver for finding ground state energy
@@ -236,6 +279,11 @@ print(f"Best parameters: {best_params}")
     name: "QAOA",
     emoji: "🌀",
     description: "Approximate optimization",
+    longDescription: "QAOA (Quantum Approximate Optimization Algorithm) tackles combinatorial optimization problems like MaxCut, graph coloring, and scheduling. It alternates between a problem Hamiltonian and a mixer Hamiltonian, with parameters optimized classically. As the number of layers (p) increases, QAOA approaches the optimal solution. It's one of the most promising NISQ-era algorithms for practical quantum advantage.",
+    category: "optimization",
+    complexity: "advanced",
+    gates: ["H", "RZZ", "RX"],
+    references: ["https://en.wikipedia.org/wiki/Quantum_approximate_optimization_algorithm"],
     qubits: 4,
     code: `# QAOA - 양자 근사 최적화 알고리즘
 # Quantum Approximate Optimization Algorithm for MaxCut
@@ -295,6 +343,11 @@ print(f"QAOA MaxCut best solution: |{best_result}⟩ with cut = {best_cost}")
     name: "Teleportation",
     emoji: "🚀",
     description: "Quantum state teleportation",
+    longDescription: "Quantum teleportation transfers a quantum state from one qubit to another using a shared Bell pair and two bits of classical communication. The original state is destroyed in the process (no-cloning theorem). It's a fundamental protocol in quantum networking, distributed quantum computing, and quantum error correction. First demonstrated experimentally in 1997.",
+    category: "entanglement",
+    complexity: "intermediate",
+    gates: ["H", "CNOT", "X", "Z"],
+    references: ["https://en.wikipedia.org/wiki/Quantum_teleportation"],
     qubits: 3,
     code: `# Quantum Teleportation - 양자 텔레포테이션
 # Transfer quantum state using entanglement and classical communication
@@ -344,6 +397,11 @@ print(qc.draw())
     name: "Deutsch-Jozsa",
     emoji: "🎯",
     description: "Constant vs balanced oracle",
+    longDescription: "The Deutsch-Jozsa algorithm determines whether a Boolean function is constant (same output for all inputs) or balanced (outputs 0 for half, 1 for the other half) with a single query. Classically, this requires up to 2^(n-1)+1 evaluations. It was the first algorithm to demonstrate an exponential quantum speedup, proving the theoretical power of quantum computation.",
+    category: "search",
+    complexity: "beginner",
+    gates: ["H", "X", "Oracle"],
+    references: ["https://en.wikipedia.org/wiki/Deutsch%E2%80%93Jozsa_algorithm"],
     qubits: 3,
     code: `# Deutsch-Jozsa Algorithm - 도이치-조사 알고리즘
 # Determines if a function is constant or balanced in one query
@@ -400,6 +458,11 @@ print(qc.draw())
     name: "Bernstein-Vazirani",
     emoji: "🔑",
     description: "Hidden string finding",
+    longDescription: "The Bernstein-Vazirani algorithm finds a hidden binary string s encoded in a function f(x) = s·x (mod 2) with a single quantum query, compared to n classical queries. It extends the Deutsch-Jozsa framework and demonstrates quantum parallelism through superposition. The algorithm is a stepping stone toward understanding more complex quantum speedups.",
+    category: "search",
+    complexity: "beginner",
+    gates: ["H", "X", "CNOT"],
+    references: ["https://en.wikipedia.org/wiki/Bernstein%E2%80%93Vazirani_algorithm"],
     qubits: 4,
     code: `# Bernstein-Vazirani Algorithm - 번스타인-바지라니 알고리즘
 # Finds hidden string s in f(x) = s·x (mod 2) with one query
@@ -448,6 +511,11 @@ print(qc.draw())
     name: "Simon",
     emoji: "🔄",
     description: "Period finding",
+    longDescription: "Simon's algorithm finds the hidden period s of a function f where f(x) = f(y) iff x⊕y ∈ {0,s}. It achieves an exponential speedup: O(n) quantum queries vs O(2^(n/2)) classically. Simon's algorithm was historically important as it inspired Shor's algorithm and provided the first example of an exponential quantum speedup for a computational problem.",
+    category: "cryptography",
+    complexity: "intermediate",
+    gates: ["H", "CNOT", "Oracle"],
+    references: ["https://en.wikipedia.org/wiki/Simon%27s_problem"],
     qubits: 4,
     code: `# Simon's Algorithm - 사이먼 알고리즘
 # Finds hidden period s where f(x) = f(x ⊕ s)
@@ -502,6 +570,11 @@ print(qc.draw())
     name: "Shor",
     emoji: "🔢",
     description: "Integer factorization",
+    longDescription: "Shor's algorithm factors integers in polynomial time O((log N)³), compared to the best known classical algorithm's sub-exponential time. It combines quantum phase estimation with modular exponentiation to find the period of a modular function, which reveals factors. Shor's algorithm threatens RSA encryption and is the primary motivation for post-quantum cryptography research.",
+    category: "cryptography",
+    complexity: "advanced",
+    gates: ["H", "CP", "SWAP", "Modular Exponentiation"],
+    references: ["https://en.wikipedia.org/wiki/Shor%27s_algorithm"],
     qubits: 8,
     code: `# Shor's Algorithm (Simplified) - 쇼어 알고리즘 (간소화)
 # Period finding for integer factorization
@@ -574,6 +647,11 @@ print(f"Results: {dict(sorted(counts.items(), key=lambda x: -x[1])[:5])}")
     name: "QPE",
     emoji: "📐",
     description: "Quantum Phase Estimation",
+    longDescription: "Quantum Phase Estimation (QPE) estimates the eigenvalue phase θ of a unitary operator U, where U|ψ⟩ = e^(2πiθ)|ψ⟩. It combines Hadamard gates, controlled-U operations, and inverse QFT to extract θ with precision proportional to the number of ancilla qubits. QPE is a key subroutine in Shor's algorithm, quantum chemistry simulations, and quantum machine learning.",
+    category: "transform",
+    complexity: "advanced",
+    gates: ["H", "CU", "QFT†"],
+    references: ["https://en.wikipedia.org/wiki/Quantum_phase_estimation_algorithm"],
     qubits: 5,
     code: `# QPE - 양자 위상 추정
 # Quantum Phase Estimation: estimates eigenvalue phase of unitary operator
