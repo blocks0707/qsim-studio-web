@@ -128,6 +128,8 @@ function TreeNode({
   const toggleFolder = useIDEStore((s) => s.toggleFolder);
   const openFileInEditor = useIDEStore((s) => s.openFileInEditor);
   const renameFile = useIDEStore((s) => s.renameFile);
+  const moveFile = useIDEStore((s) => s.moveFile);
+  const [dragOver, setDragOver] = useState(false);
 
   const isFolder = node.type === "folder";
   const isExpanded = expandedFolders.has(node.id);
@@ -156,7 +158,29 @@ function TreeNode({
         className="flex items-center gap-1 py-0.5 pr-2 cursor-pointer hover:bg-white/5"
         style={{
           paddingLeft,
-          background: isActive ? "rgba(255,255,255,0.08)" : undefined,
+          background: dragOver ? "rgba(86,156,214,0.2)" : isActive ? "rgba(255,255,255,0.08)" : undefined,
+          outline: dragOver ? "1px dashed #569cd6" : undefined,
+        }}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", node.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => {
+          if (!isFolder) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (!isFolder) return;
+          const dragId = e.dataTransfer.getData("text/plain");
+          if (dragId && dragId !== node.id) {
+            moveFile(dragId, node.id);
+          }
         }}
         onClick={() => {
           if (isFolder) toggleFolder(node.id);
@@ -213,6 +237,7 @@ function FilesPanel() {
   const createFolder = useIDEStore((s) => s.createFolder);
   const deleteFile = useIDEStore((s) => s.deleteFile);
   const duplicateFile = useIDEStore((s) => s.duplicateFile);
+  const moveFile = useIDEStore((s) => s.moveFile);
 
   const [projectExpanded, setProjectExpanded] = useState(true);
   const [creating, setCreating] = useState<"file" | "folder" | null>(null);
@@ -328,10 +353,16 @@ function FilesPanel() {
         </div>
       </div>
 
-      {/* Project root */}
+      {/* Project root — drop here to move to root */}
       <div
         className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-white/5"
         onClick={() => setProjectExpanded(!projectExpanded)}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const dragId = e.dataTransfer.getData("text/plain");
+          if (dragId) moveFile(dragId, null);
+        }}
       >
         {projectExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         {projectExpanded
