@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import dynamic from "next/dynamic";
+import hljs from "highlight.js/lib/core";
+import python from "highlight.js/lib/languages/python";
+import "highlight.js/styles/vs2015.css";
 import {
   Play,
   Plus,
@@ -22,10 +24,7 @@ import {
   createCell,
 } from "@/lib/notebook";
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react").then(m => m.default), {
-  ssr: false,
-  loading: () => <div style={{ height: 32, background: "transparent" }} />,
-});
+hljs.registerLanguage("python", python);
 
 interface NotebookEditorProps {
   notebook: Notebook;
@@ -125,12 +124,27 @@ function CellEditor({
   const isCode = cell.cell_type === "code";
   const [editing, setEditing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const codeRef = useRef<HTMLPreElement>(null);
 
-  // Line count for dynamic height (Monaco)
-  const lineCount = useMemo(() => Math.max((source.split("\n").length), 1), [source]);
-  const editorHeight = Math.max(lineCount * 19 + 10, 38); // 19px per line + padding
+  // Highlighted HTML
+  const highlightedHtml = useMemo(() => {
+    if (!isCode) return "";
+    try {
+      return hljs.highlight(source || " ", { language: "python" }).value;
+    } catch {
+      return source;
+    }
+  }, [source, isCode]);
 
-  // Auto-resize textarea (markdown editing)
+  // Sync textarea scroll with highlight overlay
+  const syncScroll = useCallback(() => {
+    if (textareaRef.current && codeRef.current) {
+      codeRef.current.scrollTop = textareaRef.current.scrollTop;
+      codeRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+  }, []);
+
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -167,34 +181,41 @@ function CellEditor({
         <div className="flex-1 min-w-0">
           {/* Source editor */}
           {isCode ? (
-            <div style={{ height: editorHeight }} className="rounded overflow-hidden">
-              <MonacoEditor
-                height={editorHeight}
-                language="python"
-                theme="vs-dark"
-                value={source}
-                onChange={(v) => onSourceChange(v ?? "")}
-                options={{
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  lineNumbers: "off",
-                  glyphMargin: false,
-                  folding: false,
-                  lineDecorationsWidth: 0,
-                  lineNumbersMinChars: 0,
-                  renderLineHighlight: "none",
-                  scrollbar: { vertical: "hidden", horizontal: "auto", handleMouseWheel: false },
-                  overviewRulerLanes: 0,
-                  overviewRulerBorder: false,
-                  hideCursorInOverviewRuler: true,
-                  wordWrap: "on",
-                  fontSize: 12,
-                  fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
-                  padding: { top: 4, bottom: 4 },
-                  automaticLayout: true,
-                  tabSize: 4,
-                  contextmenu: false,
+            <div className="relative rounded" style={{ background: "rgba(255,255,255,0.04)" }}>
+              {/* Syntax-highlighted underlay */}
+              <pre
+                ref={codeRef}
+                className="font-mono text-xs leading-5 p-2 m-0 overflow-hidden pointer-events-none"
+                style={{ background: "transparent", whiteSpace: "pre-wrap", wordWrap: "break-word" }}
+                aria-hidden="true"
+              >
+                <code
+                  className="hljs"
+                  dangerouslySetInnerHTML={{ __html: highlightedHtml + "\n" }}
+                />
+              </pre>
+              {/* Transparent textarea overlay for editing */}
+              <textarea
+                ref={textareaRef}
+                className="absolute inset-0 w-full h-full resize-none font-mono text-xs leading-5 p-2 rounded outline-none"
+                style={{
+                  background: "transparent",
+                  color: "transparent",
+                  caretColor: "#d4d4d4",
+                  border: "none",
+                  WebkitTextFillColor: "transparent",
                 }}
+                value={source}
+                onChange={(e) => onSourceChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.shiftKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    onExecute();
+                  }
+                }}
+                onScroll={syncScroll}
+                spellCheck={false}
+                placeholder="# Enter code..."
               />
             </div>
           ) : editing ? (
