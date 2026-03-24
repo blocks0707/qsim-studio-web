@@ -1,9 +1,36 @@
 "use client";
 
-import React, { useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import React, { useMemo, useRef, useState, useEffect } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Text, Line } from "@react-three/drei";
 import * as THREE from "three";
+
+/** Force GL resize after mount — fixes 0-dimension initial render */
+function ResizeHandler() {
+  const { gl, camera } = useThree();
+  useEffect(() => {
+    const tick = () => {
+      const canvas = gl.domElement;
+      const parent = canvas.parentElement;
+      if (parent) {
+        const w = parent.clientWidth;
+        const h = parent.clientHeight;
+        if (w > 0 && h > 0) {
+          gl.setSize(w, h, false);
+          if ("aspect" in camera) {
+            (camera as THREE.PerspectiveCamera).aspect = w / h;
+            (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+          }
+        }
+      }
+    };
+    // Run after a frame so layout is settled
+    const id = requestAnimationFrame(tick);
+    window.addEventListener("resize", tick);
+    return () => { cancelAnimationFrame(id); window.removeEventListener("resize", tick); };
+  }, [gl, camera]);
+  return null;
+}
 
 interface QSphereViewProps {
   counts: Record<string, number>;
@@ -73,6 +100,17 @@ function probColor(prob: number, maxProb: number): string {
 }
 
 export default function QSphereView({ counts, statevector }: QSphereViewProps) {
+  const [ready, setReady] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Delay Canvas mount until container has real dimensions
+    const raf = requestAnimationFrame(() => {
+      setReady(true);
+    });
+    return () => { cancelAnimationFrame(raf); };
+  }, []);
+
   const data = useMemo(() => {
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     if (total === 0) return { states: [], nQubits: 0, maxProb: 0, hasStatevector: false };
@@ -126,12 +164,22 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
     return circles;
   }, [data.nQubits]);
 
+  if (!ready) {
+    return (
+      <div ref={containerRef} className="w-full h-full flex items-center justify-center" style={{ minHeight: 300 }}>
+        <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>Initializing Q-Sphere...</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full" style={{ minHeight: 300 }}>
-      <Canvas camera={{ position: [3, 2, 3], fov: 50 }}>
-        <ambientLight intensity={0.6} />
-        <pointLight position={[5, 5, 5]} intensity={0.8} />
-        <pointLight position={[-5, -3, -5]} intensity={0.3} />
+    <div ref={containerRef} className="w-full h-full relative" style={{ minHeight: 300 }}>
+      <div style={{ position: "absolute", inset: 0 }}>
+        <Canvas camera={{ position: [3, 2, 3], fov: 50 }} resize={{ debounce: 0 }}>
+          <ResizeHandler />
+          <ambientLight intensity={0.6} />
+          <pointLight position={[5, 5, 5]} intensity={0.8} />
+          <pointLight position={[-5, -3, -5]} intensity={0.3} />
 
         <RotatingGroup>
           {/* Wireframe sphere */}
@@ -176,8 +224,9 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
           })}
         </RotatingGroup>
 
-        <OrbitControls enablePan={false} minDistance={3} maxDistance={8} />
-      </Canvas>
+          <OrbitControls enablePan={false} minDistance={3} maxDistance={8} />
+        </Canvas>
+      </div>
     </div>
   );
 }
