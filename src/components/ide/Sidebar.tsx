@@ -6,8 +6,11 @@ import {
   ChevronRight,
   ChevronDown,
   Folder,
+  FolderOpen,
   FileText,
+  FileCode,
   Plus,
+  FolderPlus,
   Play,
   Circle,
   Monitor,
@@ -18,59 +21,202 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { normalizePhase, createClient, type JobPhase } from "@/lib/api";
+import { getChildren, type FSNode } from "@/lib/filesystem";
 import { StatusBadge } from "./StatusBadge";
 import { JobStepper } from "./JobStepper";
 import { useState, useEffect, useCallback, useRef } from "react";
+
+/* ───────── File icon helper ───────── */
+
+function FileIcon({ name }: { name: string }) {
+  if (name.endsWith(".qasm")) return <FileCode size={14} className="text-[#e37933] flex-shrink-0" />;
+  if (name.endsWith(".py")) return <FileCode size={14} className="text-[#519aba] flex-shrink-0" />;
+  if (name.endsWith(".json")) return <FileText size={14} className="text-[#cbcb41] flex-shrink-0" />;
+  if (name.endsWith(".md")) return <FileText size={14} className="text-[#519aba] flex-shrink-0" />;
+  if (name.endsWith(".txt")) return <FileText size={14} className="text-[#a0a0a0] flex-shrink-0" />;
+  return <FileText size={14} className="text-[#a0a0a0] flex-shrink-0" />;
+}
+
+/* ───────── Inline name input ───────── */
+
+function InlineInput({
+  defaultValue,
+  onSubmit,
+  onCancel,
+}: {
+  defaultValue: string;
+  onSubmit: (val: string) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(defaultValue);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const submit = () => {
+    const v = value.trim();
+    if (v) onSubmit(v);
+    else onCancel();
+  };
+
+  return (
+    <input
+      ref={ref}
+      className="w-full px-1.5 py-0.5 text-xs rounded"
+      style={{
+        background: "var(--bg-editor)",
+        border: "1px solid var(--accent)",
+        color: "var(--text-primary)",
+        outline: "none",
+      }}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") submit();
+        if (e.key === "Escape") onCancel();
+      }}
+      onBlur={submit}
+    />
+  );
+}
+
+/* ───────── Tree node component ───────── */
+
+function TreeNode({
+  node,
+  allFiles,
+  depth,
+  renamingId,
+  setRenamingId,
+  onContextMenu,
+}: {
+  node: FSNode;
+  allFiles: FSNode[];
+  depth: number;
+  renamingId: string | null;
+  setRenamingId: (id: string | null) => void;
+  onContextMenu: (e: React.MouseEvent, node: FSNode) => void;
+}) {
+  const activeTabId = useIDEStore((s) => s.activeTabId);
+  const dirtyFiles = useIDEStore((s) => s.dirtyFiles);
+  const expandedFolders = useIDEStore((s) => s.expandedFolders);
+  const toggleFolder = useIDEStore((s) => s.toggleFolder);
+  const openFileInEditor = useIDEStore((s) => s.openFileInEditor);
+  const renameFile = useIDEStore((s) => s.renameFile);
+
+  const isFolder = node.type === "folder";
+  const isExpanded = expandedFolders.has(node.id);
+  const isActive = node.id === activeTabId;
+  const isDirty = dirtyFiles.has(node.id);
+  const children = isFolder ? getChildren(allFiles, node.id) : [];
+  const paddingLeft = 8 + depth * 16;
+
+  // Renaming
+  if (renamingId === node.id) {
+    return (
+      <div style={{ paddingLeft }} className="py-0.5 pr-2">
+        <InlineInput
+          defaultValue={node.name}
+          onSubmit={(val) => { renameFile(node.id, val); setRenamingId(null); }}
+          onCancel={() => setRenamingId(null)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        className="flex items-center gap-1 py-0.5 pr-2 cursor-pointer hover:bg-white/5"
+        style={{
+          paddingLeft,
+          background: isActive ? "rgba(255,255,255,0.08)" : undefined,
+        }}
+        onClick={() => {
+          if (isFolder) toggleFolder(node.id);
+          else openFileInEditor(node);
+        }}
+        onContextMenu={(e) => onContextMenu(e, node)}
+      >
+        {isFolder ? (
+          <>
+            {isExpanded ? <ChevronDown size={14} className="flex-shrink-0" /> : <ChevronRight size={14} className="flex-shrink-0" />}
+            {isExpanded
+              ? <FolderOpen size={14} className="text-[#dcb67a] flex-shrink-0" />
+              : <Folder size={14} className="text-[#dcb67a] flex-shrink-0" />
+            }
+          </>
+        ) : (
+          <>
+            <span className="w-[14px] flex-shrink-0" /> {/* indent spacer for files */}
+            <FileIcon name={node.name} />
+          </>
+        )}
+        <span
+          className="flex-1 truncate text-[13px]"
+          style={{ color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}
+        >
+          {node.name}
+        </span>
+        {isDirty && (
+          <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: "var(--accent)" }} />
+        )}
+      </div>
+
+      {/* Render children if folder is expanded */}
+      {isFolder && isExpanded && children.map((child) => (
+        <TreeNode
+          key={child.id}
+          node={child}
+          allFiles={allFiles}
+          depth={depth + 1}
+          renamingId={renamingId}
+          setRenamingId={setRenamingId}
+          onContextMenu={onContextMenu}
+        />
+      ))}
+    </>
+  );
+}
 
 /* ───────── FilesPanel ───────── */
 
 function FilesPanel() {
   const files = useIDEStore((s) => s.files);
-  const activeTabId = useIDEStore((s) => s.activeTabId);
-  const dirtyFiles = useIDEStore((s) => s.dirtyFiles);
-  const openFileInEditor = useIDEStore((s) => s.openFileInEditor);
   const createFile = useIDEStore((s) => s.createFile);
-  const renameFile = useIDEStore((s) => s.renameFile);
+  const createFolder = useIDEStore((s) => s.createFolder);
   const deleteFile = useIDEStore((s) => s.deleteFile);
+  const duplicateFile = useIDEStore((s) => s.duplicateFile);
 
-  const [expanded, setExpanded] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [newFileName, setNewFileName] = useState("untitled.py");
+  const [projectExpanded, setProjectExpanded] = useState(true);
+  const [creating, setCreating] = useState<"file" | "folder" | null>(null);
+  const [creatingParentId, setCreatingParentId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; fileId: string } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const renameRef = useRef<HTMLInputElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FSNode } | null>(null);
 
-  useEffect(() => {
-    if (creating && inputRef.current) inputRef.current.focus();
-  }, [creating]);
-
-  useEffect(() => {
-    if (renamingId && renameRef.current) renameRef.current.focus();
-  }, [renamingId]);
-
-  const handleCreate = () => {
-    const name = newFileName.trim() || "untitled.py";
-    createFile(name);
-    setCreating(false);
-    setNewFileName("untitled.py");
+  const handleCreate = (name: string) => {
+    if (creating === "folder") {
+      createFolder(name, creatingParentId);
+    } else {
+      createFile(name, undefined, creatingParentId);
+    }
+    setCreating(null);
+    setCreatingParentId(null);
   };
 
-  const handleRename = (id: string) => {
-    const name = renameValue.trim();
-    if (name) renameFile(id, name);
-    setRenamingId(null);
-  };
-
-  const handleContextMenu = (e: React.MouseEvent, fileId: string) => {
+  const handleContextMenu = (e: React.MouseEvent, node: FSNode) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, fileId });
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
   };
+
+  const rootNodes = getChildren(files, null);
 
   return (
     <div className="text-sm">
-      {/* Header with New File button */}
+      {/* Header */}
       <div className="flex items-center justify-between px-2 py-1">
         <span
           className="text-[10px] uppercase tracking-wider font-semibold"
@@ -78,108 +224,73 @@ function FilesPanel() {
         >
           Files
         </span>
-        <button
-          className="p-0.5 rounded hover:bg-white/10"
-          title="New File"
-          onClick={() => setCreating(true)}
-        >
-          <Plus size={14} style={{ color: "var(--text-secondary)" }} />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            className="p-0.5 rounded hover:bg-white/10"
+            title="New File"
+            onClick={() => { setCreating("file"); setCreatingParentId(null); }}
+          >
+            <Plus size={14} style={{ color: "var(--text-secondary)" }} />
+          </button>
+          <button
+            className="p-0.5 rounded hover:bg-white/10"
+            title="New Folder"
+            onClick={() => { setCreating("folder"); setCreatingParentId(null); }}
+          >
+            <FolderPlus size={14} style={{ color: "var(--text-secondary)" }} />
+          </button>
+        </div>
       </div>
 
-      {/* New file input */}
-      {creating && (
-        <div className="px-2 py-1">
-          <input
-            ref={inputRef}
-            className="w-full px-1.5 py-0.5 text-xs rounded"
-            style={{
-              background: "var(--bg-editor)",
-              border: "1px solid var(--accent)",
-              color: "var(--text-primary)",
-              outline: "none",
-            }}
-            value={newFileName}
-            onChange={(e) => setNewFileName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreate();
-              if (e.key === "Escape") setCreating(false);
-            }}
-            onBlur={handleCreate}
-          />
-        </div>
-      )}
-
-      {/* Project folder */}
+      {/* Project root */}
       <div
         className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-white/5"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setProjectExpanded(!projectExpanded)}
       >
-        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <Folder size={16} className="text-[#dcb67a]" />
+        {projectExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        {projectExpanded
+          ? <FolderOpen size={16} className="text-[#dcb67a]" />
+          : <Folder size={16} className="text-[#dcb67a]" />
+        }
         <span>project</span>
       </div>
 
-      {expanded && (
-        <div className="ml-4">
-          {files.map((f) => {
-            const isActive = f.id === activeTabId;
-            const isDirty = dirtyFiles.has(f.id);
+      {projectExpanded && (
+        <div>
+          {/* Creating new item at root */}
+          {creating && creatingParentId === null && (
+            <div style={{ paddingLeft: 24 }} className="py-0.5 pr-2">
+              <InlineInput
+                defaultValue={creating === "folder" ? "new-folder" : "untitled.py"}
+                onSubmit={handleCreate}
+                onCancel={() => setCreating(null)}
+              />
+            </div>
+          )}
 
-            if (renamingId === f.id) {
-              return (
-                <div key={f.id} className="px-2 py-0.5">
-                  <input
-                    ref={renameRef}
-                    className="w-full px-1.5 py-0.5 text-xs rounded"
-                    style={{
-                      background: "var(--bg-editor)",
-                      border: "1px solid var(--accent)",
-                      color: "var(--text-primary)",
-                      outline: "none",
-                    }}
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRename(f.id);
-                      if (e.key === "Escape") setRenamingId(null);
-                    }}
-                    onBlur={() => handleRename(f.id)}
-                  />
-                </div>
-              );
-            }
+          {/* Tree nodes */}
+          {rootNodes.map((node) => (
+            <TreeNode
+              key={node.id}
+              node={node}
+              allFiles={files}
+              depth={1}
+              renamingId={renamingId}
+              setRenamingId={setRenamingId}
+              onContextMenu={handleContextMenu}
+            />
+          ))}
 
-            return (
-              <div
-                key={f.id}
-                className="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-white/5"
-                style={{
-                  background: isActive ? "rgba(255,255,255,0.08)" : undefined,
-                }}
-                onClick={() => openFileInEditor(f)}
-                onContextMenu={(e) => handleContextMenu(e, f.id)}
+          {rootNodes.length === 0 && !creating && (
+            <div className="px-6 py-3 text-xs text-center" style={{ color: "var(--text-secondary)" }}>
+              <p className="mb-2">No files yet</p>
+              <button
+                className="text-[11px] px-2 py-1 rounded hover:bg-white/10"
+                style={{ color: "var(--accent)", border: "1px solid var(--accent)" }}
+                onClick={() => { setCreating("file"); setCreatingParentId(null); }}
               >
-                <FileText
-                  size={14}
-                  className={f.name.endsWith(".qasm") ? "text-[#e37933]" : "text-[#519aba]"}
-                />
-                <span
-                  className="flex-1 truncate"
-                  style={{ color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}
-                >
-                  {f.name}
-                </span>
-                {isDirty && (
-                  <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ background: "var(--accent)" }} />
-                )}
-              </div>
-            );
-          })}
-
-          {files.length === 0 && !creating && (
-            <div className="px-2 py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-              No files yet
+                + Create a file
+              </button>
             </div>
           )}
         </div>
@@ -190,16 +301,24 @@ function FilesPanel() {
         <FileContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
+          isFolder={contextMenu.node.type === "folder"}
           onRename={() => {
-            const file = files.find((f) => f.id === contextMenu.fileId);
-            if (file) {
-              setRenamingId(file.id);
-              setRenameValue(file.name);
-            }
+            setRenamingId(contextMenu.node.id);
           }}
           onDelete={() => {
-            deleteFile(contextMenu.fileId);
+            deleteFile(contextMenu.node.id);
           }}
+          onDuplicate={contextMenu.node.type === "file" ? () => {
+            duplicateFile(contextMenu.node.id);
+          } : undefined}
+          onNewFile={contextMenu.node.type === "folder" ? () => {
+            setCreating("file");
+            setCreatingParentId(contextMenu.node.id);
+          } : undefined}
+          onNewFolder={contextMenu.node.type === "folder" ? () => {
+            setCreating("folder");
+            setCreatingParentId(contextMenu.node.id);
+          } : undefined}
           onClose={() => setContextMenu(null)}
         />
       )}

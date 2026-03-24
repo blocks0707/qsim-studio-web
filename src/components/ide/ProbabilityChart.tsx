@@ -49,9 +49,9 @@ export function ProbabilityChart({ counts }: Props) {
         <Tooltip
           contentStyle={{ background: "#1e1e2e", border: "1px solid #555", borderRadius: 6, fontSize: 12 }}
           labelStyle={{ color: "#ccc" }}
-          formatter={(value: number) => [`${(value * 100).toFixed(4)}%`, "Probability"]}
+          formatter={(value: unknown) => [`${(Number(value) * 100).toFixed(4)}%`, "Probability"]}
         />
-        <Bar dataKey="probability" radius={[4, 4, 0, 0]} label={{ position: "top", fill: "#999", fontSize: 10, formatter: (v: number) => `${(v * 100).toFixed(1)}%` }}>
+        <Bar dataKey="probability" radius={[4, 4, 0, 0]} label={{ position: "top", fill: "#999", fontSize: 10, formatter: (v: unknown) => `${(Number(v) * 100).toFixed(1)}%` }}>
           {data.map((_, i) => (
             <Cell key={i} fill={`url(#probGrad${i})`} />
           ))}
