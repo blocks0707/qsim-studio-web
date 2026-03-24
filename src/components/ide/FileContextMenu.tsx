@@ -11,6 +11,7 @@ interface FileContextMenuProps {
   onDuplicate?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
+  onDownload?: () => void;
   onClose: () => void;
 }
 
@@ -23,6 +24,7 @@ export function FileContextMenu({
   onDuplicate,
   onNewFile,
   onNewFolder,
+  onDownload,
   onClose,
 }: FileContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -57,6 +59,9 @@ export function FileContextMenu({
     items.push({ label: "Duplicate", onClick: onDuplicate });
   }
   items.push({ label: "Rename", onClick: onRename });
+  if (onDownload) {
+    items.push({ label: "Download", onClick: onDownload });
+  }
   items.push({ label: "", onClick: () => {}, separator: true });
   items.push({ label: isFolder ? "Delete Folder" : "Delete", onClick: onDelete, color: "#f44747" });
 

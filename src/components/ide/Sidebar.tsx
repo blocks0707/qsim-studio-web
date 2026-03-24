@@ -11,6 +11,8 @@ import {
   FileCode,
   Plus,
   FolderPlus,
+  Upload,
+  Download,
   Play,
   Circle,
   Monitor,
@@ -21,7 +23,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { normalizePhase, createClient, type JobPhase } from "@/lib/api";
-import { getChildren, type FSNode } from "@/lib/filesystem";
+import { getChildren, loadFileContent, type FSNode } from "@/lib/filesystem";
 import { StatusBadge } from "./StatusBadge";
 import { JobStepper } from "./JobStepper";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -196,6 +198,35 @@ function FilesPanel() {
   const [creatingParentId, setCreatingParentId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FSNode } | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
+
+  // Import files from local filesystem
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+    Array.from(fileList).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = reader.result as string;
+        createFile(file.name, content, null);
+      };
+      reader.readAsText(file);
+    });
+    // Reset input
+    if (importRef.current) importRef.current.value = "";
+  };
+
+  // Download a file
+  const handleDownload = (node: FSNode) => {
+    const content = loadFileContent(node.path) || "";
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = node.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleCreate = (name: string) => {
     if (creating === "folder") {
@@ -239,6 +270,21 @@ function FilesPanel() {
           >
             <FolderPlus size={14} style={{ color: "var(--text-secondary)" }} />
           </button>
+          <button
+            className="p-0.5 rounded hover:bg-white/10"
+            title="Import Files"
+            onClick={() => importRef.current?.click()}
+          >
+            <Upload size={14} style={{ color: "var(--text-secondary)" }} />
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            multiple
+            accept=".py,.qasm,.json,.txt,.md"
+            className="hidden"
+            onChange={handleImport}
+          />
         </div>
       </div>
 
@@ -318,6 +364,9 @@ function FilesPanel() {
           onNewFolder={contextMenu.node.type === "folder" ? () => {
             setCreating("folder");
             setCreatingParentId(contextMenu.node.id);
+          } : undefined}
+          onDownload={contextMenu.node.type === "file" ? () => {
+            handleDownload(contextMenu.node);
           } : undefined}
           onClose={() => setContextMenu(null)}
         />
