@@ -466,42 +466,242 @@ function FilesPanel() {
 
 /* ───────── AlgorithmsPanel ───────── */
 
-function AlgorithmsPanel() {
-  const openAlgorithm = useIDEStore((s) => s.openAlgorithm);
+import { algorithms as algorithmRegistry, CATEGORIES, type Algorithm, type AlgorithmCategory, type ComplexityLevel } from "@/lib/algorithms";
 
-  const algorithms = [
-    { id: "bell-state", name: "Bell State", desc: "2-qubit entanglement", icon: "🔔" },
-    { id: "ghz-state", name: "GHZ State", desc: "Multi-qubit entanglement", icon: "👻" },
-    { id: "qft", name: "QFT", desc: "Quantum Fourier Transform", icon: "📊" },
-    { id: "grover", name: "Grover", desc: "Quantum search", icon: "🔍" },
-    { id: "vqe", name: "VQE", desc: "Variational Quantum Eigensolver", icon: "⚡" },
-    { id: "qaoa", name: "QAOA", desc: "Quantum optimization", icon: "🌀" },
-    { id: "teleportation", name: "Teleportation", desc: "Quantum state transfer", icon: "🚀" },
-    { id: "deutsch-jozsa", name: "Deutsch-Jozsa", desc: "Oracle problem", icon: "🎯" },
-    { id: "bernstein-vazirani", name: "Bernstein-Vazirani", desc: "Hidden string", icon: "🔑" },
-    { id: "simon", name: "Simon", desc: "Period finding", icon: "🔄" },
-    { id: "shor", name: "Shor", desc: "Integer factoring", icon: "🔢" },
-    { id: "qpe", name: "QPE", desc: "Phase estimation", icon: "📐" },
-  ];
+const complexityColors: Record<ComplexityLevel, { bg: string; text: string }> = {
+  beginner: { bg: "rgba(78,201,176,0.15)", text: "#4ec9b0" },
+  intermediate: { bg: "rgba(86,156,214,0.15)", text: "#569cd6" },
+  advanced: { bg: "rgba(206,145,120,0.15)", text: "#ce9178" },
+};
 
+function ComplexityBadge({ level }: { level: ComplexityLevel }) {
+  const c = complexityColors[level];
   return (
-    <div className="grid grid-cols-2 gap-2 p-2">
-      {algorithms.map((a) => (
-        <div
-          key={a.name}
-          className="p-2 rounded cursor-pointer hover:bg-white/10 transition-colors"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)" }}
-          onClick={() => openAlgorithm(a.id)}
-        >
-          <div className="text-lg mb-1">{a.icon}</div>
-          <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
-            {a.name}
-          </div>
-          <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            {a.desc}
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wider"
+      style={{ background: c.bg, color: c.text }}
+    >
+      {level}
+    </span>
+  );
+}
+
+function AlgorithmDetail({ algorithm, onOpen, onBack }: { algorithm: Algorithm; onOpen: () => void; onBack: () => void }) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Back button */}
+      <button
+        className="flex items-center gap-1 px-3 py-2 text-xs hover:bg-white/5"
+        style={{ color: "var(--text-secondary)" }}
+        onClick={onBack}
+      >
+        <ChevronRight size={12} className="rotate-180" /> Back to list
+      </button>
+
+      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-4">
+        {/* Header */}
+        <div>
+          <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+            {algorithm.name}
+          </h3>
+          <p className="text-xs mb-2" style={{ color: "var(--text-secondary)" }}>
+            {algorithm.description}
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ComplexityBadge level={algorithm.complexity} />
+            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-secondary)" }}>
+              {algorithm.qubits} qubits
+            </span>
           </div>
         </div>
-      ))}
+
+        {/* Description */}
+        <div>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-secondary)" }}>
+            Overview
+          </h4>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-primary)" }}>
+            {algorithm.longDescription}
+          </p>
+        </div>
+
+        {/* Gates */}
+        <div>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-secondary)" }}>
+            Key Gates
+          </h4>
+          <div className="flex flex-wrap gap-1">
+            {algorithm.gates.map((g) => (
+              <span
+                key={g}
+                className="text-[11px] px-2 py-0.5 rounded font-mono"
+                style={{ background: "rgba(255,255,255,0.06)", color: "#dcdcaa" }}
+              >
+                {g}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* References */}
+        {algorithm.references && algorithm.references.length > 0 && (
+          <div>
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--text-secondary)" }}>
+              References
+            </h4>
+            {algorithm.references.map((ref, i) => (
+              <a
+                key={i}
+                href={ref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-[11px] truncate hover:underline mb-0.5"
+                style={{ color: "#569cd6" }}
+              >
+                {ref.replace("https://en.wikipedia.org/wiki/", "Wikipedia: ").replace(/%E2%80%93/g, "–").replace(/_/g, " ")}
+              </a>
+            ))}
+          </div>
+        )}
+
+        {/* Open in Editor button */}
+        <button
+          className="w-full py-2 rounded text-xs font-medium hover:brightness-110 transition-all"
+          style={{ background: "#007acc", color: "#fff" }}
+          onClick={onOpen}
+        >
+          Open in Editor
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AlgorithmsPanel() {
+  const openAlgorithm = useIDEStore((s) => s.openAlgorithm);
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<AlgorithmCategory | "all">("all");
+  const [detailAlgorithm, setDetailAlgorithm] = useState<Algorithm | null>(null);
+
+  const filtered = algorithmRegistry.filter((a) => {
+    if (selectedCategory !== "all" && a.category !== selectedCategory) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        a.name.toLowerCase().includes(q) ||
+        a.description.toLowerCase().includes(q) ||
+        a.category.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  if (detailAlgorithm) {
+    return (
+      <AlgorithmDetail
+        algorithm={detailAlgorithm}
+        onOpen={() => {
+          openAlgorithm(detailAlgorithm.id);
+          setDetailAlgorithm(null);
+        }}
+        onBack={() => setDetailAlgorithm(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="text-sm flex flex-col h-full">
+      {/* Search */}
+      <div className="px-2 py-2 flex-shrink-0">
+        <input
+          className="w-full px-2 py-1.5 text-xs rounded"
+          style={{
+            background: "var(--bg-editor)",
+            border: "1px solid var(--border)",
+            color: "var(--text-primary)",
+            outline: "none",
+          }}
+          placeholder="Search algorithms..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {/* Category filter */}
+      <div className="px-2 pb-2 flex flex-wrap gap-1 flex-shrink-0">
+        <button
+          className="text-[10px] px-2 py-0.5 rounded transition-colors"
+          style={{
+            background: selectedCategory === "all" ? "rgba(86,156,214,0.2)" : "transparent",
+            color: selectedCategory === "all" ? "#569cd6" : "var(--text-secondary)",
+            border: `1px solid ${selectedCategory === "all" ? "#569cd644" : "var(--border)"}`,
+          }}
+          onClick={() => setSelectedCategory("all")}
+        >
+          All
+        </button>
+        {CATEGORIES.map((cat) => {
+          const count = algorithmRegistry.filter((a) => a.category === cat.id).length;
+          return (
+            <button
+              key={cat.id}
+              className="text-[10px] px-2 py-0.5 rounded transition-colors"
+              style={{
+                background: selectedCategory === cat.id ? "rgba(86,156,214,0.2)" : "transparent",
+                color: selectedCategory === cat.id ? "#569cd6" : "var(--text-secondary)",
+                border: `1px solid ${selectedCategory === cat.id ? "#569cd644" : "var(--border)"}`,
+              }}
+              onClick={() => setSelectedCategory(cat.id)}
+            >
+              {cat.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Algorithm list */}
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-center" style={{ color: "var(--text-secondary)" }}>
+            No matching algorithms
+          </div>
+        ) : (
+          filtered.map((a) => (
+            <div
+              key={a.id}
+              className="px-3 py-2.5 cursor-pointer hover:bg-white/5 transition-colors"
+              style={{ borderBottom: "1px solid var(--border)" }}
+              onClick={() => setDetailAlgorithm(a)}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                  {a.name}
+                </span>
+                <ComplexityBadge level={a.complexity} />
+              </div>
+              <p className="text-[11px] mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                {a.description}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                  {a.qubits}q
+                </span>
+                <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                  {a.gates.slice(0, 3).join(", ")}{a.gates.length > 3 ? "…" : ""}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Footer count */}
+      <div
+        className="px-3 py-1.5 text-[10px] flex-shrink-0"
+        style={{ borderTop: "1px solid var(--border)", color: "var(--text-secondary)" }}
+      >
+        {filtered.length} of {algorithmRegistry.length} algorithms
+      </div>
     </div>
   );
 }
