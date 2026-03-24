@@ -34,6 +34,7 @@ export interface JobStatus {
   startTime?: string;
   completionTime?: string;
   executionTime?: number;
+  complexity?: Record<string, unknown>;
 }
 
 export interface JobResult {

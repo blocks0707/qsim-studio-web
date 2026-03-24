@@ -8,7 +8,16 @@ import {
   saveFileContent,
   deleteFileContent,
   ensureDefaultFiles,
+  createFolder as fsCreateFolder,
+  createFile as fsCreateFile,
+  renameNode,
+  deleteNode,
+  moveNode,
+  duplicateFile as fsDuplicateFile,
+  getChildren,
+  getDescendants,
   type FSFile,
+  type FSNode,
 } from "@/lib/filesystem";
 
 export type SidebarSection = "files" | "algorithms" | "jobs" | "nodes" | "settings";
@@ -123,11 +132,16 @@ interface IDEState {
   rejectSuggestion: () => void;
 
   // File system
-  files: FSFile[];
+  files: FSNode[];
   dirtyFiles: Set<string>;
-  createFile: (name: string, content?: string) => string;
+  expandedFolders: Set<string>;
+  toggleFolder: (folderId: string) => void;
+  createFile: (name: string, content?: string, parentId?: string | null) => string;
+  createFolder: (name: string, parentId?: string | null) => string;
   renameFile: (id: string, newName: string) => void;
   deleteFile: (id: string) => void;
+  moveFile: (id: string, newParentId: string | null) => void;
+  duplicateFile: (id: string) => void;
   loadFromStorage: () => void;
   saveFileToStorage: (fileId: string) => void;
   openFileInEditor: (file: FSFile) => void;
@@ -296,64 +310,108 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   // File system
   files: [],
   dirtyFiles: new Set<string>(),
+  expandedFolders: new Set<string>(),
 
-  createFile: (name, content) => {
-    if (!name.includes(".")) name = name + ".py";
-    const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const path = `/${name}`;
-    const file: FSFile = { id, name, path };
+  toggleFolder: (folderId) => {
+    set((s) => {
+      const expanded = new Set(s.expandedFolders);
+      if (expanded.has(folderId)) expanded.delete(folderId);
+      else expanded.add(folderId);
+      return { expandedFolders: expanded };
+    });
+  },
+
+  createFile: (name, content, parentId) => {
     const defaultContent = content ?? "# New quantum circuit\nfrom qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2, 2)\n";
+    const file = fsCreateFile(name || "untitled.py", defaultContent, parentId ?? null);
 
     set((s) => {
-      const files = [...s.files, file];
-      saveFileTree(files);
-      saveFileContent(path, defaultContent);
+      const files = loadFileTree();
+      // Auto-expand parent folder
+      const expanded = new Set(s.expandedFolders);
+      if (parentId) expanded.add(parentId);
       return {
         files,
-        fileContents: { ...s.fileContents, [id]: defaultContent },
+        expandedFolders: expanded,
+        fileContents: { ...s.fileContents, [file.id]: defaultContent },
       };
     });
 
     get().openFileInEditor(file);
-    return id;
+    return file.id;
+  },
+
+  createFolder: (name, parentId) => {
+    const folder = fsCreateFolder(name || "new-folder", parentId ?? null);
+    set((s) => {
+      const files = loadFileTree();
+      const expanded = new Set(s.expandedFolders);
+      if (parentId) expanded.add(parentId);
+      return { files, expandedFolders: expanded };
+    });
+    return folder.id;
   },
 
   renameFile: (id, newName) => {
-    if (!newName.includes(".")) newName = newName + ".py";
+    renameNode(id, newName);
     set((s) => {
-      const files = s.files.map((f) => {
-        if (f.id !== id) return f;
-        const oldPath = f.path;
-        const content = s.fileContents[id] ?? loadFileContent(oldPath) ?? "";
-        deleteFileContent(oldPath);
-        const newPath = `/${newName}`;
-        saveFileContent(newPath, content);
-        return { ...f, name: newName, path: newPath };
-      });
-      saveFileTree(files);
-      const openTabs = s.openTabs.map((t) =>
-        t.id === id ? { ...t, title: newName, language: getLanguageFromFilename(newName) } : t
-      );
+      const files = loadFileTree();
+      const node = files.find((f) => f.id === id);
+      const openTabs = node?.type === "file"
+        ? s.openTabs.map((t) =>
+            t.id === id ? { ...t, title: node.name, language: getLanguageFromFilename(node.name) } : t
+          )
+        : s.openTabs;
       return { files, openTabs };
     });
   },
 
   deleteFile: (id) => {
-    set((s) => {
-      const file = s.files.find((f) => f.id === id);
-      if (file) {
-        deleteFileContent(file.path);
+    const s = get();
+    const node = s.files.find((f) => f.id === id);
+    // Collect all ids to remove (including descendants for folders)
+    const idsToRemove = new Set<string>();
+    idsToRemove.add(id);
+    if (node?.type === "folder") {
+      for (const d of getDescendants(s.files, id)) {
+        idsToRemove.add(d.id);
       }
-      const files = s.files.filter((f) => f.id !== id);
-      saveFileTree(files);
-      const openTabs = s.openTabs.filter((t) => t.id !== id);
+    }
+
+    deleteNode(id);
+
+    set((s) => {
+      const files = loadFileTree();
+      const openTabs = s.openTabs.filter((t) => !idsToRemove.has(t.id));
       const newContents = { ...s.fileContents };
-      delete newContents[id];
-      const activeTabId = s.activeTabId === id
+      for (const rid of idsToRemove) delete newContents[rid];
+      const activeTabId = idsToRemove.has(s.activeTabId || "")
         ? (openTabs.length > 0 ? openTabs[openTabs.length - 1].id : null)
         : s.activeTabId;
       return { files, openTabs, activeTabId, fileContents: newContents };
     });
+  },
+
+  moveFile: (id, newParentId) => {
+    moveNode(id, newParentId);
+    set(() => {
+      const files = loadFileTree();
+      return { files };
+    });
+  },
+
+  duplicateFile: (id) => {
+    const dup = fsDuplicateFile(id);
+    if (!dup) return;
+    set((s) => {
+      const files = loadFileTree();
+      const content = loadFileContent(dup.path) || "";
+      return {
+        files,
+        fileContents: { ...s.fileContents, [dup.id]: content },
+      };
+    });
+    get().openFileInEditor(dup);
   },
 
   loadFromStorage: () => {
