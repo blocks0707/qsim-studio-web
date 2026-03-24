@@ -148,7 +148,57 @@ export function createClient(baseUrl: string, token: string) {
         return false;
       }
     },
+
+    // ─── Project & File API (MinIO-backed) ───
+
+    listProjects: () =>
+      apiFetch<ProjectMeta[]>(url, "/api/v1/projects", token),
+
+    createProject: (name: string) =>
+      apiFetch<ProjectMeta>(url, "/api/v1/projects", token, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+
+    deleteProject: (projectId: string) =>
+      apiFetch<void>(url, `/api/v1/projects/${projectId}`, token, { method: "DELETE" }),
+
+    listFiles: (projectId: string) =>
+      apiFetch<ProjectFile[]>(url, `/api/v1/projects/${projectId}/files`, token),
+
+    getFile: (projectId: string, path: string) =>
+      apiFetch<{ content: string }>(url, `/api/v1/projects/${projectId}/files${path}`, token),
+
+    putFile: (projectId: string, path: string, content: string) =>
+      apiFetch<{ status: string }>(url, `/api/v1/projects/${projectId}/files${path}`, token, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+
+    deleteRemoteFile: (projectId: string, path: string) =>
+      apiFetch<void>(url, `/api/v1/projects/${projectId}/files${path}`, token, { method: "DELETE" }),
+
+    moveFile: (projectId: string, oldPath: string, newPath: string) =>
+      apiFetch<{ status: string }>(url, `/api/v1/projects/${projectId}/move-file`, token, {
+        method: "POST",
+        body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
+      }),
   };
+}
+
+// ─── Project types ───
+
+export interface ProjectMeta {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectFile {
+  path: string;
+  size: number;
 }
 
 export interface CircuitGateResult {
