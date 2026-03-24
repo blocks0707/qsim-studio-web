@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { Play, Square, Loader2, ChevronDown } from "lucide-react";
 import { TabBar } from "./TabBar";
 import { StudioHome } from "./StudioHome";
+import { SuggestionOverlay } from "./SuggestionOverlay";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
 import { createClient, extractResult, normalizePhase } from "@/lib/api";
 import type { JobPhase } from "@/lib/api";
@@ -324,7 +325,8 @@ export function EditorArea() {
       {activeTabId ? (
         <>
           <EditorToolbar />
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden relative">
+            <SuggestionOverlay />
             <MonacoEditor />
           </div>
         </>

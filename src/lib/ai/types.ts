@@ -32,6 +32,14 @@ export interface AIProviderConfig {
   apiUrl: string;
   apiToken: string;
   model?: string;
+  /** Provider type hint */
+  provider?: string;
+  /** OpenClaw Gateway URL (for gateway mode) */
+  gatewayUrl?: string;
+  /** OpenClaw Gateway token (for gateway mode) */
+  gatewayToken?: string;
+  /** Agent ID for gateway spawn */
+  agentId?: string;
   /** Provider-specific options */
   [key: string]: unknown;
 }

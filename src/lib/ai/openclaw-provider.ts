@@ -68,7 +68,10 @@ export class OpenClawProvider implements AIProvider {
     const controller = new AbortController();
     const url = this.config.apiUrl;
 
-    if (url === "/api/ai/chat" || url === "" || url === "local") {
+    if (this.config.provider === "gateway") {
+      // OpenClaw Gateway mode — spawn sub-agent
+      this.chatGateway(messages, context, callbacks, controller);
+    } else if (url === "/api/ai/chat" || url === "" || url === "local") {
       // Use built-in Next.js API route proxy
       this.chatLocal(messages, context, callbacks, controller);
     } else if (url.includes("api.anthropic.com")) {
@@ -150,7 +153,50 @@ export class OpenClawProvider implements AIProvider {
     }
   }
 
-  /** OpenClaw Gateway — spawn a sub-agent session */
+  /** OpenClaw Gateway via Next.js proxy — spawn sub-agent */
+  private async chatGateway(
+    messages: AIMessage[],
+    context: AIContext,
+    callbacks: AIStreamCallbacks,
+    controller: AbortController,
+  ) {
+    try {
+      const res = await fetch("/api/ai/gateway", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          context,
+          gatewayUrl: this.config.gatewayUrl || undefined,
+          gatewayToken: this.config.gatewayToken || this.config.apiToken || undefined,
+          agentId: this.config.agentId || undefined,
+          model: this.config.model || undefined,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        callbacks.onError(errBody.error || `Gateway error ${res.status}`);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.error) {
+        callbacks.onError(data.error);
+        return;
+      }
+
+      const text = data.text || "";
+      callbacks.onToken(text);
+      callbacks.onDone(text);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      callbacks.onError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** OpenClaw Gateway — spawn a sub-agent session (direct, no proxy) */
   private async chatOpenClaw(
     messages: AIMessage[],
     context: AIContext,
