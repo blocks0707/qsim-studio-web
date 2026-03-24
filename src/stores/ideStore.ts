@@ -104,7 +104,24 @@ function persistSettings(apiUrl: string, apiToken: string, editor: EditorSetting
   localStorage.setItem("qsim-settings:lineNumbers", String(editor.lineNumbers));
 }
 
+export interface PendingSuggestion {
+  /** Original code before suggestion */
+  originalCode: string;
+  /** Suggested new code */
+  suggestedCode: string;
+  /** Target tab/file ID */
+  tabId: string;
+  /** Whether it's a full file replacement or partial */
+  isFullReplace: boolean;
+}
+
 interface IDEState {
+  // Code suggestion (Cursor-style)
+  pendingSuggestion: PendingSuggestion | null;
+  setPendingSuggestion: (s: PendingSuggestion | null) => void;
+  acceptSuggestion: () => void;
+  rejectSuggestion: () => void;
+
   // File system
   files: FSFile[];
   dirtyFiles: Set<string>;
@@ -392,6 +409,30 @@ export const useIDEStore = create<IDEState>((set, get) => ({
         fileContents: { ...s.fileContents, [file.id]: content },
       }));
     }
+  },
+
+  // Code suggestion
+  pendingSuggestion: null,
+  setPendingSuggestion: (s) => set({ pendingSuggestion: s }),
+  acceptSuggestion: () => {
+    const { pendingSuggestion } = get();
+    if (!pendingSuggestion) return;
+    // Code is already in the editor (set during apply preview) — just confirm it
+    get().setFileContent(pendingSuggestion.tabId, pendingSuggestion.suggestedCode);
+    set({ pendingSuggestion: null });
+  },
+  rejectSuggestion: () => {
+    const { pendingSuggestion, editorRef } = get();
+    if (!pendingSuggestion) return;
+    // Restore original code — must update Monaco directly
+    const editor = editorRef as unknown as {
+      getModel: () => { setValue: (v: string) => void } | null;
+    } | null;
+    if (editor?.getModel) {
+      editor.getModel()?.setValue(pendingSuggestion.originalCode);
+    }
+    get().setFileContent(pendingSuggestion.tabId, pendingSuggestion.originalCode);
+    set({ pendingSuggestion: null });
   },
 
   // Jobs

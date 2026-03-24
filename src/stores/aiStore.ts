@@ -9,26 +9,37 @@ export interface ChatMessage extends AIMessage {
   codeBlock?: string;
   /** Is streaming in progress */
   streaming?: boolean;
+  /** Whether this message's code has been applied */
+  applied?: boolean;
 }
 
-type AIProviderType = "openclaw" | "custom";
+type AIProviderType = "openclaw" | "gateway" | "custom";
 
 interface AISettings {
   provider: AIProviderType;
   apiUrl: string;
   apiToken: string;
   model: string;
+  /** OpenClaw Gateway URL (for gateway mode) */
+  gatewayUrl: string;
+  /** OpenClaw Gateway token (for gateway mode) */
+  gatewayToken: string;
+  /** Agent ID for gateway spawn */
+  agentId: string;
 }
 
 function loadAISettings(): AISettings {
   if (typeof window === "undefined") {
-    return { provider: "openclaw", apiUrl: "", apiToken: "", model: "" };
+    return { provider: "openclaw", apiUrl: "", apiToken: "", model: "", gatewayUrl: "", gatewayToken: "", agentId: "" };
   }
   return {
     provider: (localStorage.getItem("qsim-ai:provider") as AIProviderType) || "openclaw",
     apiUrl: localStorage.getItem("qsim-ai:apiUrl") || "",
     apiToken: localStorage.getItem("qsim-ai:apiToken") || "",
     model: localStorage.getItem("qsim-ai:model") || "",
+    gatewayUrl: localStorage.getItem("qsim-ai:gatewayUrl") || "",
+    gatewayToken: localStorage.getItem("qsim-ai:gatewayToken") || "",
+    agentId: localStorage.getItem("qsim-ai:agentId") || "",
   };
 }
 
@@ -38,9 +49,25 @@ function saveAISettings(s: AISettings) {
   localStorage.setItem("qsim-ai:apiUrl", s.apiUrl);
   localStorage.setItem("qsim-ai:apiToken", s.apiToken);
   localStorage.setItem("qsim-ai:model", s.model);
+  localStorage.setItem("qsim-ai:gatewayUrl", s.gatewayUrl);
+  localStorage.setItem("qsim-ai:gatewayToken", s.gatewayToken);
+  localStorage.setItem("qsim-ai:agentId", s.agentId);
 }
 
 function createProvider(settings: AISettings): AIProvider | null {
+  if (settings.provider === "gateway") {
+    // OpenClaw Gateway mode — needs gateway token (URL defaults to localhost)
+    if (!settings.gatewayToken && !process.env.OPENCLAW_GATEWAY_TOKEN) return null;
+    return new OpenClawProvider({
+      apiUrl: "",
+      apiToken: settings.gatewayToken,
+      model: settings.model || undefined,
+      provider: "gateway",
+      gatewayUrl: settings.gatewayUrl || undefined,
+      gatewayToken: settings.gatewayToken || undefined,
+      agentId: settings.agentId || undefined,
+    });
+  }
   // "local" mode uses server-side proxy — only needs apiToken (or env key)
   const isLocal = settings.apiUrl === "local" || settings.apiUrl === "/api/ai/chat" || settings.apiUrl === "";
   if (!isLocal && (!settings.apiUrl || !settings.apiToken)) return null;
@@ -53,6 +80,11 @@ function createProvider(settings: AISettings): AIProvider | null {
     });
   }
   return null;
+}
+
+function isSettingsConfigured(s: AISettings): boolean {
+  if (s.provider === "gateway") return !!s.gatewayToken;
+  return !!(s.apiUrl && s.apiToken) || s.apiUrl === "local" || s.apiUrl === "/api/ai/chat" || s.apiUrl === "";
 }
 
 let msgCounter = 0;
@@ -80,10 +112,14 @@ interface AIState {
   sendMessage: (text: string, context: AIContext) => void;
   stopStreaming: () => void;
   clearChat: () => void;
-  applyCode: (code: string) => void;
+  applyCode: (code: string, messageId?: string) => void;
+  markApplied: (messageId: string) => void;
   /** Set by IDE to allow code insertion */
   onApplyCode: ((code: string) => void) | null;
   setOnApplyCode: (fn: ((code: string) => void) | null) => void;
+  /** Callback to auto-preview code in editor (diff without applying) */
+  onPreviewCode: ((code: string) => void) | null;
+  setOnPreviewCode: (fn: ((code: string) => void) | null) => void;
 }
 
 export const useAIStore = create<AIState>((set, get) => {
@@ -94,11 +130,11 @@ export const useAIStore = create<AIState>((set, get) => {
     togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
 
     settings: initial,
-    isConfigured: !!(initial.apiUrl && initial.apiToken) || initial.apiUrl === "local" || initial.apiUrl === "/api/ai/chat" || initial.apiUrl === "",
+    isConfigured: isSettingsConfigured(initial),
     updateSettings: (partial) => {
       const next = { ...get().settings, ...partial };
       saveAISettings(next);
-      set({ settings: next, isConfigured: !!(next.apiUrl && next.apiToken) || next.apiUrl === "local" || next.apiUrl === "/api/ai/chat" || next.apiUrl === "" });
+      set({ settings: next, isConfigured: isSettingsConfigured(next) });
     },
 
     messages: [],
@@ -154,6 +190,10 @@ export const useAIStore = create<AIState>((set, get) => {
             const codeBlock = extractCodeBlock(fullText) || undefined;
             const updated = { ...last, content: fullText, streaming: false, codeBlock };
             set({ messages: [...msgs.slice(0, -1), updated], isStreaming: false, abortController: null });
+            // Auto-preview code in editor if runnable
+            if (codeBlock && /^(from |import )|QuantumCircuit\(/.test(codeBlock.trim())) {
+              get().onPreviewCode?.(codeBlock);
+            }
           }
         },
         onError: (error) => {
@@ -185,11 +225,20 @@ export const useAIStore = create<AIState>((set, get) => {
 
     clearChat: () => set({ messages: [], isStreaming: false, abortController: null }),
 
-    applyCode: (code) => {
+    applyCode: (code, messageId) => {
       get().onApplyCode?.(code);
+      if (messageId) get().markApplied(messageId);
+    },
+
+    markApplied: (messageId) => {
+      const msgs = get().messages;
+      set({ messages: msgs.map((m) => m.id === messageId ? { ...m, applied: true } : m) });
     },
 
     onApplyCode: null,
     setOnApplyCode: (fn) => set({ onApplyCode: fn }),
+
+    onPreviewCode: null,
+    setOnPreviewCode: (fn) => set({ onPreviewCode: fn }),
   };
 });

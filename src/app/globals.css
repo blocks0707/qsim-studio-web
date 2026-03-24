@@ -69,3 +69,21 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+/* Cursor-style code suggestion diff decorations */
+.suggestion-line-added {
+  background: rgba(78, 201, 176, 0.12) !important;
+}
+.suggestion-line-removed {
+  background: rgba(244, 71, 71, 0.12) !important;
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.suggestion-gutter-added {
+  border-left: 3px solid #4ec9b0 !important;
+  margin-left: 3px;
+}
+.suggestion-gutter-removed {
+  border-left: 3px solid #f44747 !important;
+  margin-left: 3px;
+}

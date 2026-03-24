@@ -1,9 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Square, Trash2, Copy, Play, Settings, X, ChevronDown } from "lucide-react";
+import { Bot, Send, Square, Trash2, Copy, Play, Settings, X, ChevronDown, Check } from "lucide-react";
 import { useAIStore, type ChatMessage } from "@/stores/aiStore";
 import { useIDEStore } from "@/stores/ideStore";
+import hljs from "highlight.js/lib/core";
+import python from "highlight.js/lib/languages/python";
+import bash from "highlight.js/lib/languages/bash";
+import json from "highlight.js/lib/languages/json";
+import "highlight.js/styles/vs2015.css";
+
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("qasm", python); // fallback
 
 // Quick action templates
 const QUICK_ACTIONS = [
@@ -46,20 +56,25 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         {/* Render content with code blocks */}
         <MessageContent content={msg.content} streaming={msg.streaming} />
 
-        {/* Code action buttons */}
+        {/* Code action buttons — Cursor-style Apply */}
         {msg.codeBlock && !msg.streaming && (() => {
-          // Only show "Apply" for runnable code (has imports or circuit creation)
           const isRunnable = /^(from |import )|QuantumCircuit\(/.test(msg.codeBlock!.trim());
+          const isApplied = msg.applied;
           return (
             <div className="flex gap-1 mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
               {isRunnable && (
                 <button
-                  onClick={() => applyCode(msg.codeBlock!)}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] hover:opacity-80 transition-opacity"
-                  style={{ background: "var(--accent)", color: "white" }}
-                  title="Apply code to editor"
+                  onClick={() => !isApplied && applyCode(msg.codeBlock!, msg.id)}
+                  disabled={isApplied}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    background: isApplied ? "var(--bg-editor)" : "linear-gradient(135deg, #007acc, #0098ff)",
+                    color: isApplied ? "var(--text-secondary)" : "white",
+                    boxShadow: isApplied ? "none" : "0 1px 3px rgba(0,122,204,0.3)",
+                  }}
+                  title={isApplied ? "Applied" : "Apply to editor"}
                 >
-                  <Play size={10} /> 적용
+                  {isApplied ? <><Check size={10} /> Applied</> : <><Play size={10} /> Apply</>}
                 </button>
               )}
               <button
@@ -68,7 +83,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                 style={{ background: "var(--bg-editor)", color: "var(--text-secondary)" }}
                 title="Copy code"
               >
-                <Copy size={10} /> 복사
+                <Copy size={10} /> Copy
               </button>
             </div>
           );
@@ -98,14 +113,32 @@ function MessageContent({ content, streaming }: { content: string; streaming?: b
         if (part.startsWith("```")) {
           const match = part.match(/```(\w*)\n?([\s\S]*?)```/);
           if (match) {
+            const lang = match[1] || "python";
+            const code = match[2];
+            let highlighted: string;
+            try {
+              highlighted = hljs.getLanguage(lang)
+                ? hljs.highlight(code, { language: lang }).value
+                : hljs.highlightAuto(code).value;
+            } catch {
+              highlighted = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            }
             return (
-              <pre
-                key={i}
-                className="my-2 p-2 rounded text-[12px] overflow-x-auto"
-                style={{ background: "var(--bg-editor)", border: "1px solid var(--border)" }}
-              >
-                <code>{match[2]}</code>
-              </pre>
+              <div key={i} className="my-2 rounded overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between px-2 py-1" style={{ background: "rgba(255,255,255,0.05)", borderBottom: "1px solid var(--border)" }}>
+                  <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>{lang}</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(code)}
+                    className="text-[10px] opacity-50 hover:opacity-100 flex items-center gap-1"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    <Copy size={10} /> Copy
+                  </button>
+                </div>
+                <pre className="p-2 text-[12px] overflow-x-auto" style={{ background: "var(--bg-editor)", margin: 0 }}>
+                  <code className={`hljs language-${lang}`} dangerouslySetInnerHTML={{ __html: highlighted }} />
+                </pre>
+              </div>
             );
           }
         }
@@ -117,7 +150,7 @@ function MessageContent({ content, streaming }: { content: string; streaming?: b
                 <code
                   key={j}
                   className="px-1 py-0.5 rounded text-[12px]"
-                  style={{ background: "var(--bg-editor)" }}
+                  style={{ background: "var(--bg-editor)", color: "#ce9178" }}
                 >
                   {seg.slice(1, -1)}
                 </code>
@@ -135,14 +168,26 @@ function MessageContent({ content, streaming }: { content: string; streaming?: b
 
 function AISettingsPanel({ onClose }: { onClose: () => void }) {
   const { settings, updateSettings } = useAIStore();
+  const [provider, setProvider] = useState(settings.provider);
   const [url, setUrl] = useState(settings.apiUrl);
   const [token, setToken] = useState(settings.apiToken);
   const [model, setModel] = useState(settings.model);
+  const [gatewayUrl, setGatewayUrl] = useState(settings.gatewayUrl);
+  const [gatewayToken, setGatewayToken] = useState(settings.gatewayToken);
+  const [agentId, setAgentId] = useState(settings.agentId);
 
   const save = () => {
-    updateSettings({ apiUrl: url, apiToken: token, model });
+    updateSettings({ provider, apiUrl: url, apiToken: token, model, gatewayUrl, gatewayToken, agentId });
     onClose();
   };
+
+  const inputStyle = {
+    background: "var(--bg-editor)",
+    color: "var(--text-primary)",
+    border: "1px solid var(--border)",
+  };
+
+  const isGateway = provider === "gateway";
 
   return (
     <div className="p-3 space-y-3" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -154,38 +199,120 @@ function AISettingsPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="space-y-2">
+        {/* Provider selector */}
         <div>
-          <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>API URL</label>
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://api.anthropic.com"
-            className="w-full px-2 py-1.5 rounded text-[12px]"
-            style={{ background: "var(--bg-editor)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          />
+          <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Provider</label>
+          <div className="flex gap-1">
+            {([
+              { key: "openclaw", label: "Local Proxy" },
+              { key: "gateway", label: "OpenClaw Gateway" },
+              { key: "custom", label: "Custom API" },
+            ] as const).map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setProvider(p.key)}
+                className="px-2 py-1 rounded text-[11px] transition-colors"
+                style={{
+                  background: provider === p.key ? "var(--accent)" : "var(--bg-editor)",
+                  color: provider === p.key ? "#fff" : "var(--text-secondary)",
+                  border: `1px solid ${provider === p.key ? "var(--accent)" : "var(--border)"}`,
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div>
-          <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>API Token</label>
-          <input
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            type="password"
-            placeholder="Bearer token"
-            className="w-full px-2 py-1.5 rounded text-[12px]"
-            style={{ background: "var(--bg-editor)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-          />
-        </div>
+
+        {isGateway ? (
+          <>
+            {/* Gateway settings */}
+            <div>
+              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>
+                Gateway URL
+                <span className="opacity-50 ml-1">(비워두면 localhost:18789)</span>
+              </label>
+              <input
+                value={gatewayUrl}
+                onChange={(e) => setGatewayUrl(e.target.value)}
+                placeholder="http://localhost:18789"
+                className="w-full px-2 py-1.5 rounded text-[12px]"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Gateway Token</label>
+              <input
+                value={gatewayToken}
+                onChange={(e) => setGatewayToken(e.target.value)}
+                type="password"
+                placeholder="Gateway bearer token"
+                className="w-full px-2 py-1.5 rounded text-[12px]"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>
+                Agent ID
+                <span className="opacity-50 ml-1">(비워두면 dev)</span>
+              </label>
+              <input
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                placeholder="dev"
+                className="w-full px-2 py-1.5 rounded text-[12px]"
+                style={inputStyle}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Direct API settings */}
+            <div>
+              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>
+                API URL
+                <span className="opacity-50 ml-1">(비워두면 내장 프록시)</span>
+              </label>
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://api.anthropic.com"
+                className="w-full px-2 py-1.5 rounded text-[12px]"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>API Token</label>
+              <input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                type="password"
+                placeholder="Bearer token"
+                className="w-full px-2 py-1.5 rounded text-[12px]"
+                style={inputStyle}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Model — shared */}
         <div>
           <label className="text-[11px] block mb-1" style={{ color: "var(--text-secondary)" }}>Model (optional)</label>
           <input
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="claude-sonnet-4-20250514"
+            placeholder={isGateway ? "anthropic/claude-sonnet-4-20250514" : "claude-sonnet-4-20250514"}
             className="w-full px-2 py-1.5 rounded text-[12px]"
-            style={{ background: "var(--bg-editor)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+            style={inputStyle}
           />
         </div>
       </div>
+
+      {isGateway && (
+        <div className="text-[10px] px-2 py-1.5 rounded" style={{ background: "var(--bg-editor)", color: "var(--text-secondary)" }}>
+          💡 Gateway 모드는 OpenClaw의 에이전트를 통해 응답합니다. API 키 없이 구독만으로 사용 가능.
+        </div>
+      )}
 
       <button
         onClick={save}
@@ -228,65 +355,60 @@ export function AIPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Register code apply handler
+  const setPendingSuggestion = useIDEStore((s) => s.setPendingSuggestion);
+  const setOnPreviewCode = useAIStore((s) => s.setOnPreviewCode);
+
+  // Helper: apply code to editor via Monaco API
+  const applyToEditor = useCallback((code: string) => {
+    const state = useIDEStore.getState();
+    const tabId = state.activeTabId;
+    if (!tabId) return;
+
+    const isCompleteFile = /^(from |import |#.*\n(?:from |import ))/.test(code.trim());
+    const currentCode = state.fileContents[tabId] || "";
+    const finalCode = isCompleteFile ? code : currentCode + "\n" + code + "\n";
+
+    const editor = state.editorRef as unknown as {
+      getModel: () => { setValue: (v: string) => void } | null;
+    } | null;
+    if (editor?.getModel) {
+      editor.getModel()?.setValue(finalCode);
+    }
+    state.setFileContent(tabId, finalCode);
+    return { currentCode, finalCode, tabId, isCompleteFile };
+  }, []);
+
+  // Register preview handler — auto-shows diff when AI finishes generating code
   useEffect(() => {
-    setOnApplyCode((code: string) => {
-      if (!activeTabId) return;
-      const currentCode = fileContents[activeTabId] || "";
-
-      // Heuristic: if code looks like a complete file (has imports or circuit creation),
-      // replace entire content. Otherwise insert at end.
-      const isCompleteFile = /^(from |import |#.*\n(?:from |import ))/.test(code.trim());
-
-      if (editorRef) {
-        const model = editorRef as unknown as {
-          executeEdits: (source: string, edits: Array<{
-            range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
-            text: string;
-          }>) => void;
-        };
-
-        if (isCompleteFile) {
-          // Replace entire content
-          const lineCount = currentCode.split("\n").length;
-          model.executeEdits("ai-assistant", [
-            {
-              range: {
-                startLineNumber: 1,
-                startColumn: 1,
-                endLineNumber: lineCount + 1,
-                endColumn: 1,
-              },
-              text: code + "\n",
-            },
-          ]);
-        } else {
-          // Insert at end of file
-          const lines = currentCode.split("\n");
-          const lastLine = lines.length;
-          const lastCol = (lines[lastLine - 1]?.length || 0) + 1;
-          model.executeEdits("ai-assistant", [
-            {
-              range: {
-                startLineNumber: lastLine,
-                startColumn: lastCol,
-                endLineNumber: lastLine,
-                endColumn: lastCol,
-              },
-              text: "\n" + code + "\n",
-            },
-          ]);
-        }
-      } else {
-        if (isCompleteFile) {
-          setFileContent(activeTabId, code);
-        } else {
-          setFileContent(activeTabId, currentCode + "\n" + code + "\n");
-        }
+    setOnPreviewCode((code: string) => {
+      const result = applyToEditor(code);
+      if (result) {
+        // Show diff overlay (Accept/Reject)
+        setPendingSuggestion({
+          originalCode: result.currentCode,
+          suggestedCode: result.finalCode,
+          tabId: result.tabId,
+          isFullReplace: result.isCompleteFile,
+        });
       }
     });
+    return () => setOnPreviewCode(null);
+  }, [setOnPreviewCode, setPendingSuggestion, applyToEditor]);
+
+  // Register apply handler — directly applies code and accepts (single click)
+  useEffect(() => {
+    setOnApplyCode((code: string) => {
+      const state = useIDEStore.getState();
+      // If there's already a pending suggestion showing this code, just accept it
+      if (state.pendingSuggestion) {
+        state.acceptSuggestion();
+        return;
+      }
+      // Otherwise apply directly
+      applyToEditor(code);
+    });
     return () => setOnApplyCode(null);
-  }, [activeTabId, editorRef, fileContents, setFileContent, setOnApplyCode]);
+  }, [setOnApplyCode, applyToEditor]);
 
   const getContext = useCallback(() => {
     const code = activeTabId ? fileContents[activeTabId] : undefined;

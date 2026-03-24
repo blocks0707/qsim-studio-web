@@ -89,6 +89,18 @@ function QSphereTab() {
   const counts = useCounts();
   const jobResult = useIDEStore((s) => s.jobResult);
   const statevector = jobResult?.statevector;
+  // Delay Canvas mount to ensure container has layout dimensions
+  // R3F Canvas needs a non-zero container size on mount
+  const [mounted, setMounted] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Wait for layout to settle, then mount Canvas
+    const id = setTimeout(() => {
+      setMounted(true);
+    }, 50);
+    return () => { clearTimeout(id); setMounted(false); };
+  }, []);
+
   if (!counts) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-secondary)" }}>
@@ -97,8 +109,8 @@ function QSphereTab() {
     );
   }
   return (
-    <div className="flex-1 overflow-hidden p-3 flex items-center justify-center">
-      <QSphereView counts={counts} statevector={statevector} />
+    <div ref={containerRef} className="flex-1 overflow-hidden p-3 flex items-center justify-center" style={{ minHeight: 200 }}>
+      {mounted && <QSphereView counts={counts} statevector={statevector} />}
     </div>
   );
 }

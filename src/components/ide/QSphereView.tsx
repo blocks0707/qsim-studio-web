@@ -152,8 +152,8 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
 
           {/* Axis */}
           <Line points={[[0, -2.1, 0], [0, 2.1, 0]]} color="#888888" lineWidth={1} transparent opacity={0.3} />
-          <Text position={[0, 2.3, 0]} fontSize={0.15} color="#aaaaaa">|0⟩</Text>
-          <Text position={[0, -2.3, 0]} fontSize={0.15} color="#aaaaaa">|1⟩</Text>
+          <Text position={[0, 2.3, 0]} fontSize={0.15} color="#aaaaaa">{"|0\u27E9"}</Text>
+          <Text position={[0, -2.3, 0]} fontSize={0.15} color="#aaaaaa">{"|1\u27E9"}</Text>
 
           {/* State points */}
           {data.states.map(({ state, prob, phase, pos }) => {
@@ -166,7 +166,7 @@ export default function QSphereView({ counts, statevector }: QSphereViewProps) {
                   <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} transparent opacity={0.9} />
                 </mesh>
                 <Text position={[0, -(radius + 0.12), 0]} fontSize={0.1} color="#cccccc" anchorX="center" anchorY="top">
-                  |{state}⟩
+                  {`|${state}\u27E9`}
                 </Text>
                 <Text position={[0, radius + 0.08, 0]} fontSize={0.08} color="#999999" anchorX="center" anchorY="bottom">
                   {(prob * 100).toFixed(1)}%
