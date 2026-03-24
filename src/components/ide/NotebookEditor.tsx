@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
   Play,
   Plus,
@@ -20,6 +21,11 @@ import {
   setCellSource,
   createCell,
 } from "@/lib/notebook";
+
+const MonacoEditor = dynamic(() => import("@monaco-editor/react").then(m => m.default), {
+  ssr: false,
+  loading: () => <div style={{ height: 32, background: "transparent" }} />,
+});
 
 interface NotebookEditorProps {
   notebook: Notebook;
@@ -115,25 +121,22 @@ function CellEditor({
   onMoveDown: () => void;
   onToggleType: () => void;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const source = getCellSource(cell);
   const isCode = cell.cell_type === "code";
   const [editing, setEditing] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea
+  // Line count for dynamic height (Monaco)
+  const lineCount = useMemo(() => Math.max((source.split("\n").length), 1), [source]);
+  const editorHeight = Math.max(lineCount * 19 + 10, 38); // 19px per line + padding
+
+  // Auto-resize textarea (markdown editing)
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
     }
   }, [source, editing]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.shiftKey || e.ctrlKey)) {
-      e.preventDefault();
-      onExecute();
-    }
-  };
 
   return (
     <div
@@ -163,7 +166,38 @@ function CellEditor({
         {/* Cell content */}
         <div className="flex-1 min-w-0">
           {/* Source editor */}
-          {isCode || editing ? (
+          {isCode ? (
+            <div style={{ height: editorHeight }} className="rounded overflow-hidden">
+              <MonacoEditor
+                height={editorHeight}
+                language="python"
+                theme="vs-dark"
+                value={source}
+                onChange={(v) => onSourceChange(v ?? "")}
+                options={{
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  lineNumbers: "off",
+                  glyphMargin: false,
+                  folding: false,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 0,
+                  renderLineHighlight: "none",
+                  scrollbar: { vertical: "hidden", horizontal: "auto", handleMouseWheel: false },
+                  overviewRulerLanes: 0,
+                  overviewRulerBorder: false,
+                  hideCursorInOverviewRuler: true,
+                  wordWrap: "on",
+                  fontSize: 12,
+                  fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
+                  padding: { top: 4, bottom: 4 },
+                  automaticLayout: true,
+                  tabSize: 4,
+                  contextmenu: false,
+                }}
+              />
+            </div>
+          ) : editing ? (
             <textarea
               ref={textareaRef}
               className="w-full resize-none font-mono text-xs leading-5 p-2 rounded outline-none"
@@ -175,10 +209,15 @@ function CellEditor({
               }}
               value={source}
               onChange={(e) => onSourceChange(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.shiftKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  onExecute();
+                }
+              }}
               onFocus={() => setEditing(true)}
               spellCheck={false}
-              placeholder={isCode ? "# Enter code..." : "Enter markdown..."}
+              placeholder="Enter markdown..."
             />
           ) : (
             <div
