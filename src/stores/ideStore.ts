@@ -330,6 +330,7 @@ const defaultTabs: Tab[] = [
 export function getLanguageFromFilename(filename: string): string {
   if (filename.endsWith(".qasm")) return "qasm";
   if (filename.endsWith(".py")) return "python";
+  if (filename.endsWith(".ipynb")) return "jupyter";
   if (filename.endsWith(".json")) return "json";
   return "plaintext";
 }

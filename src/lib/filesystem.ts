@@ -294,6 +294,23 @@ c = measure q;
       return `# Title
 
 `;
+    case ".ipynb":
+      return JSON.stringify({
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {
+          kernelspec: { display_name: "Python 3 (Qiskit)", language: "python", name: "python3" },
+          language_info: { name: "python", version: "3.11" },
+        },
+        cells: [{
+          id: `cell-${Date.now()}`,
+          cell_type: "code",
+          source: ["# Quantum Circuit\n", "from qiskit import QuantumCircuit\n", "\n", "qc = QuantumCircuit(2, 2)\n"],
+          metadata: {},
+          outputs: [],
+          execution_count: null,
+        }],
+      }, null, 1) + "\n";
     case ".txt":
       return "";
     default:
