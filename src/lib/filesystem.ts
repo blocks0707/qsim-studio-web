@@ -267,6 +267,40 @@ from qiskit import QuantumCircuit
 qc = QuantumCircuit(2, 2)
 `;
 
+/** Get template content based on file extension */
+export function getTemplateContent(filename: string): string {
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")).toLowerCase() : ".py";
+  switch (ext) {
+    case ".py":
+      return DEFAULT_CONTENT;
+    case ".qasm":
+      return `// OpenQASM 3.0 circuit
+OPENQASM 3.0;
+include "stdgates.inc";
+
+qubit[2] q;
+bit[2] c;
+
+h q[0];
+cx q[0], q[1];
+c = measure q;
+`;
+    case ".json":
+      return `{
+  
+}
+`;
+    case ".md":
+      return `# Title
+
+`;
+    case ".txt":
+      return "";
+    default:
+      return "";
+  }
+}
+
 export function ensureDefaultFiles(): FSNode[] {
   const tree = loadFileTree();
   if (tree.length > 0) return tree;
