@@ -114,6 +114,10 @@ function TreeNode({
   renamingId,
   setRenamingId,
   onContextMenu,
+  creating,
+  creatingParentId,
+  onCreateSubmit,
+  onCreateCancel,
 }: {
   node: FSNode;
   allFiles: FSNode[];
@@ -121,6 +125,10 @@ function TreeNode({
   renamingId: string | null;
   setRenamingId: (id: string | null) => void;
   onContextMenu: (e: React.MouseEvent, node: FSNode) => void;
+  creating: "file" | "folder" | null;
+  creatingParentId: string | null;
+  onCreateSubmit: (name: string) => void;
+  onCreateCancel: () => void;
 }) {
   const activeTabId = useIDEStore((s) => s.activeTabId);
   const dirtyFiles = useIDEStore((s) => s.dirtyFiles);
@@ -214,17 +222,35 @@ function TreeNode({
       </div>
 
       {/* Render children if folder is expanded */}
-      {isFolder && isExpanded && children.map((child) => (
-        <TreeNode
-          key={child.id}
-          node={child}
-          allFiles={allFiles}
-          depth={depth + 1}
-          renamingId={renamingId}
-          setRenamingId={setRenamingId}
-          onContextMenu={onContextMenu}
-        />
-      ))}
+      {isFolder && isExpanded && (
+        <>
+          {/* Inline input for creating inside this folder */}
+          {creating && creatingParentId === node.id && (
+            <div style={{ paddingLeft: 8 + (depth + 1) * 16 }} className="py-0.5 pr-2">
+              <InlineInput
+                defaultValue={creating === "folder" ? "new-folder" : "untitled.py"}
+                onSubmit={onCreateSubmit}
+                onCancel={onCreateCancel}
+              />
+            </div>
+          )}
+          {children.map((child) => (
+            <TreeNode
+              key={child.id}
+              node={child}
+              allFiles={allFiles}
+              depth={depth + 1}
+              renamingId={renamingId}
+              setRenamingId={setRenamingId}
+              onContextMenu={onContextMenu}
+              creating={creating}
+              creatingParentId={creatingParentId}
+              onCreateSubmit={onCreateSubmit}
+              onCreateCancel={onCreateCancel}
+            />
+          ))}
+        </>
+      )}
     </>
   );
 }
@@ -238,6 +264,8 @@ function FilesPanel() {
   const deleteFile = useIDEStore((s) => s.deleteFile);
   const duplicateFile = useIDEStore((s) => s.duplicateFile);
   const moveFile = useIDEStore((s) => s.moveFile);
+  const expandedFolders = useIDEStore((s) => s.expandedFolders);
+  const toggleFolder = useIDEStore((s) => s.toggleFolder);
 
   const [projectExpanded, setProjectExpanded] = useState(true);
   const [creating, setCreating] = useState<"file" | "folder" | null>(null);
@@ -395,6 +423,10 @@ function FilesPanel() {
               renamingId={renamingId}
               setRenamingId={setRenamingId}
               onContextMenu={handleContextMenu}
+              creating={creating}
+              creatingParentId={creatingParentId}
+              onCreateSubmit={handleCreate}
+              onCreateCancel={() => { setCreating(null); setCreatingParentId(null); }}
             />
           ))}
 
@@ -431,10 +463,17 @@ function FilesPanel() {
           onNewFile={contextMenu.node.type === "folder" ? () => {
             setCreating("file");
             setCreatingParentId(contextMenu.node.id);
+            // Auto-expand the folder
+            if (!expandedFolders.has(contextMenu.node.id)) {
+              toggleFolder(contextMenu.node.id);
+            }
           } : undefined}
           onNewFolder={contextMenu.node.type === "folder" ? () => {
             setCreating("folder");
             setCreatingParentId(contextMenu.node.id);
+            if (!expandedFolders.has(contextMenu.node.id)) {
+              toggleFolder(contextMenu.node.id);
+            }
           } : undefined}
           onDownload={contextMenu.node.type === "file" ? () => {
             handleDownload(contextMenu.node);
