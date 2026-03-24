@@ -2,6 +2,7 @@
 
 import { useIDEStore, type JobInfo } from "@/stores/ideStore";
 import { FileContextMenu } from "./FileContextMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
   ChevronRight,
   ChevronDown,
@@ -198,6 +199,7 @@ function FilesPanel() {
   const [creatingParentId, setCreatingParentId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FSNode } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FSNode | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   // Import files from local filesystem
@@ -352,7 +354,7 @@ function FilesPanel() {
             setRenamingId(contextMenu.node.id);
           }}
           onDelete={() => {
-            deleteFile(contextMenu.node.id);
+            setDeleteTarget(contextMenu.node);
           }}
           onDuplicate={contextMenu.node.type === "file" ? () => {
             duplicateFile(contextMenu.node.id);
@@ -369,6 +371,24 @@ function FilesPanel() {
             handleDownload(contextMenu.node);
           } : undefined}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title={deleteTarget.type === "folder" ? "Delete Folder" : "Delete File"}
+          message={
+            deleteTarget.type === "folder"
+              ? `Are you sure you want to delete "${deleteTarget.name}" and all its contents? This cannot be undone.`
+              : `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`
+          }
+          confirmLabel="Delete"
+          onConfirm={() => {
+            deleteFile(deleteTarget.id);
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </div>
