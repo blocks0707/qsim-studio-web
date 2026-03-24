@@ -16,6 +16,7 @@ import {
   duplicateFile as fsDuplicateFile,
   getChildren,
   getDescendants,
+  getTemplateContent,
   type FSFile,
   type FSNode,
 } from "@/lib/filesystem";
@@ -326,7 +327,8 @@ export const useIDEStore = create<IDEState>((set, get) => ({
   },
 
   createFile: (name, content, parentId) => {
-    const defaultContent = content ?? "# New quantum circuit\nfrom qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2, 2)\n";
+    const fileName = name || "untitled.py";
+    const defaultContent = content ?? getTemplateContent(fileName);
     const file = fsCreateFile(name || "untitled.py", defaultContent, parentId ?? null);
 
     set((s) => {
