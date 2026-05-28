@@ -5,7 +5,6 @@ import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/
 import { useAuthStore } from "@/stores/authStore";
 import { createClient } from "@/lib/api";
 import { useEffect, useRef } from "react";
-import { pqcSso } from "@/lib/pqc-sso";
 
 export function StatusBar() {
   const cursorPosition = useIDEStore((s) => s.cursorPosition);
@@ -21,7 +20,6 @@ export function StatusBar() {
 
   async function handleSignOut() {
     await signOut();
-    pqcSso.signInWithRedirect();
   }
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
