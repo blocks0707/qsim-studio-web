@@ -5,6 +5,7 @@ import {
   onIdTokenChanged,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type Auth,
   type User,
@@ -53,6 +54,9 @@ function createPqcSsoClient(options: {
       const email = normalizeEmail(credential.user.email);
       const idToken = await credential.user.getIdToken();
       return { user: credential.user, email, idToken };
+    },
+    signInWithRedirect() {
+      return signInWithRedirect(auth, provider);
     },
     async getSession(opts: { forceRefresh?: boolean } = {}) {
       const user = auth.currentUser;

@@ -8,23 +8,17 @@ interface AuthState {
   user: User | null;
   email: string | null;
   isLoading: boolean;
-  signIn: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>(() => ({
   user: null,
   email: null,
   isLoading: true,
 
-  signIn: async () => {
-    const session = await pqcSso.signInWithGoogle();
-    set({ user: session.user, email: session.email });
-  },
-
   signOut: async () => {
     await pqcSso.signOut();
-    set({ user: null, email: null });
+    useAuthStore.setState({ user: null, email: null });
   },
 }));
 
