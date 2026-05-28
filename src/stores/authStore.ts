@@ -22,13 +22,15 @@ export const useAuthStore = create<AuthState>(() => ({
   },
 }));
 
-// Firebase auth state 구독 — 모듈 로드 시 1회 실행
 if (typeof window !== "undefined") {
   pqcSso.onAuthStateChanged((user) => {
-    useAuthStore.setState({
-      user,
-      email: user?.email ?? null,
-      isLoading: false,
-    });
+    useAuthStore.setState({ user, email: user?.email ?? null });
+  });
+
+  // authStateReady()는 signInWithRedirect 결과 처리까지 완료된 후 resolve됨.
+  // isLoading을 true로 유지하다가 여기서 false로 전환해야
+  // redirect 복귀 직후의 null 상태에서 AuthGuard가 재redirect하는 것을 방지함.
+  pqcSso.auth.authStateReady().then(() => {
+    useAuthStore.setState({ isLoading: false });
   });
 }
