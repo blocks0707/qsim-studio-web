@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@blocks/pqc-sso-web": "file:../pqc-sso/packages/web-client",
     "@monaco-editor/react": "^4.7.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "firebase": "^12.13.0",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.577.0",
     "monaco-editor": "^0.55.1",
