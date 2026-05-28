@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { getRedirectResult } from "firebase/auth";
 import type { User } from "firebase/auth";
 import { pqcSso } from "@/lib/pqc-sso";
 
@@ -27,10 +28,12 @@ if (typeof window !== "undefined") {
     useAuthStore.setState({ user, email: user?.email ?? null });
   });
 
-  // authStateReady()는 signInWithRedirect 결과 처리까지 완료된 후 resolve됨.
-  // isLoading을 true로 유지하다가 여기서 false로 전환해야
-  // redirect 복귀 직후의 null 상태에서 AuthGuard가 재redirect하는 것을 방지함.
-  pqcSso.auth.authStateReady().then(() => {
-    useAuthStore.setState({ isLoading: false });
-  });
+  // getRedirectResult()를 명시적으로 호출해야 redirect result가 처리됨.
+  // 이 Promise가 resolve된 후에야 onAuthStateChanged가 최종 user 상태로 확정되므로
+  // isLoading을 그 시점까지 true로 유지해 AuthGuard의 조기 재redirect를 막음.
+  getRedirectResult(pqcSso.auth)
+    .catch(() => null)
+    .finally(() => {
+      useAuthStore.setState({ isLoading: false });
+    });
 }
