@@ -5,7 +5,6 @@ import {
   onIdTokenChanged,
   onAuthStateChanged,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   type Auth,
   type User,
@@ -55,9 +54,6 @@ function createPqcSsoClient(options: {
       const idToken = await credential.user.getIdToken();
       return { user: credential.user, email, idToken };
     },
-    signInWithRedirect() {
-      return signInWithRedirect(auth, provider);
-    },
     async getSession(opts: { forceRefresh?: boolean } = {}) {
       const user = auth.currentUser;
       if (!user) return null;
@@ -69,12 +65,15 @@ function createPqcSsoClient(options: {
       const session = await this.getSession(opts);
       return session ? `Bearer ${session.idToken}` : null;
     },
-    async fetchWithAuth(input: string, init: RequestInit = {}) {
+    async fetchWithAuth(input: RequestInfo | URL, init: RequestInit = {}) {
       const authorization = await this.getAuthorizationHeader();
       if (!authorization) throw new Error("pqc-sso: user is not signed in");
       const headers = new Headers(init.headers);
       headers.set("Authorization", authorization);
       return fetch(input, { ...init, headers });
+    },
+    async pqcFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+      return this.fetchWithAuth(input, init);
     },
     async signOut() {
       await signOut(auth);
