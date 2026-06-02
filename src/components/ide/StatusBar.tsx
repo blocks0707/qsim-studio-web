@@ -1,7 +1,8 @@
 "use client";
 
-import { GitBranch, AlertCircle, AlertTriangle, Wifi, WifiOff } from "lucide-react";
+import { GitBranch, AlertCircle, AlertTriangle, Wifi, WifiOff, LogOut } from "lucide-react";
 import { useIDEStore, getLanguageFromFilename, getLanguageDisplayName } from "@/stores/ideStore";
+import { useAuthStore } from "@/stores/authStore";
 import { createClient } from "@/lib/api";
 import { useEffect, useRef } from "react";
 
@@ -15,6 +16,11 @@ export function StatusBar() {
   const apiToken = useIDEStore((s) => s.apiToken);
   const setConnected = useIDEStore((s) => s.setConnected);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { email, signOut } = useAuthStore();
+
+  async function handleSignOut() {
+    await signOut();
+  }
 
   const activeTab = openTabs.find((t) => t.id === activeTabId);
   const language = activeTab ? getLanguageDisplayName(getLanguageFromFilename(activeTab.title)) : "Plain Text";
@@ -76,6 +82,19 @@ export function StatusBar() {
         <span>Spaces: 4</span>
         <span>UTF-8</span>
         <span>{language}</span>
+        {email && (
+          <>
+            <span className="text-[#858585]">{email}</span>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex items-center gap-1 hover:text-[#cccccc] text-[#858585] transition-colors"
+              title="로그아웃"
+            >
+              <LogOut size={11} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

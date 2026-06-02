@@ -1,5 +1,10 @@
 import { IDELayout } from "@/components/ide/IDELayout";
+import { AuthGuard } from "@/components/ide/AuthGuard";
 
 export default function Home() {
-  return <IDELayout />;
+  return (
+    <AuthGuard>
+      <IDELayout />
+    </AuthGuard>
+  );
 }
