@@ -1,27 +1,12 @@
 import { NextRequest } from "next/server";
-import { readFileSync } from "fs";
-import { join } from "path";
 
-// AI Chat proxy — reads Anthropic API key from multiple sources
-// Supports: env var, request body, OpenClaw auth-profiles
-// For OAuth-only setups: set ANTHROPIC_API_KEY in .env.local with a real API key
+export const runtime = "edge";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
 function getApiKey(bodyKey?: string): string | null {
-  // 1. Request body
   if (bodyKey) return bodyKey;
-  // 2. Environment variable
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
-  // 3. OpenClaw auth-profiles (only non-OAuth keys)
-  try {
-    const home = process.env.HOME || "";
-    const authPath = join(home, ".openclaw/agents/dev/agent/auth-profiles.json");
-    const data = JSON.parse(readFileSync(authPath, "utf-8"));
-    const profile = data?.profiles?.["anthropic:default"];
-    const key = profile?.access || profile?.token || "";
-    if (key && !key.includes("-oat")) return key;
-  } catch { /* ignore */ }
   return null;
 }
 

@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 
+export const runtime = "edge";
+
 // OpenClaw Gateway proxy — uses /tools/invoke to spawn a sub-agent session
 // Gateway URL and token from env or request body
 
