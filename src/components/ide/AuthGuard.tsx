@@ -2,9 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
-import { pqcSso, pqcGatewayUrl, pqcAppId } from "@/lib/pqc-sso";
 
 type State = "loading" | "signing-in" | "verifying" | "authorized" | "error";
+
+const emergencyOpenMode = process.env.NEXT_PUBLIC_PQC_AUTH_MODE !== "strict";
+
+function EmergencyOpenBanner() {
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[200] border-b border-[#5a4a16] bg-[#2f2608] px-3 py-1.5 text-center text-xs text-[#f5d76e]">
+      SSO 점검 중 임시 실행 모드
+    </div>
+  );
+}
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -13,6 +22,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const verified = useRef(false);
 
   useEffect(() => {
+    if (emergencyOpenMode) return;
     if (isLoading) return;
 
     if (!user) {
@@ -26,6 +36,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     async function verifyGateway() {
       setState("verifying");
       try {
+        const { pqcSso, pqcGatewayUrl, pqcAppId } = await import("@/lib/pqc-sso");
         const sessionUrl = new URL("/__pqc/session", pqcGatewayUrl);
         sessionUrl.searchParams.set("app_id", pqcAppId);
         const res = await pqcSso.fetchWithAuth(sessionUrl.toString());
@@ -53,16 +64,29 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     setState("loading");
     setErrorMsg("");
     try {
+      const { pqcSso } = await import("@/lib/pqc-sso");
       await pqcSso.signInWithGoogle();
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMsg(message || "Google 로그인 실패");
       setState("signing-in");
     }
   }
 
   async function handleSignOut() {
     verified.current = false;
+    const { pqcSso } = await import("@/lib/pqc-sso");
     await pqcSso.signOut();
     setState("signing-in");
+  }
+
+  if (emergencyOpenMode) {
+    return (
+      <>
+        <EmergencyOpenBanner />
+        <div className="pt-6">{children}</div>
+      </>
+    );
   }
 
   if (state === "authorized") {
